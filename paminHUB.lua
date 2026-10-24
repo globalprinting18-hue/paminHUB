@@ -1,6 +1,6 @@
--- PAPAMAMIN AUTO COLLECT v1.1 (experimental)
+-- PAPAMAMIN AUTO COLLECT + AUTO THROW | FIVE ZONES RESTORED
 
--- Tracks a locally visible flying pan and steers toward Zone 1 items.
+-- Tracks a locally visible flying pan and steers toward selectable item groups across PT_Field.
 
 -- Use only where game rules permit automation.
 
@@ -29,6 +29,7 @@ if _G.PAPAMAMIN_AUTO_COLLECT_STOP then pcall(_G.PAPAMAMIN_AUTO_COLLECT_STOP) end
 
 local running, alive = false, true
 local status -- forward-declared for persistent flight reset helpers
+local refresh, scanItems -- forward declarations used by zone-toggle callbacks
 
 local reverseAD = false
 
@@ -65,29 +66,49 @@ local initialCamera = nil
 
 local lastReasonLog = 0
 
-local zoneEndZ = 420 -- experimental Zone 1 boundary, not guaranteed
+-- Per-group collection switches. All groups start enabled for the first full-map test.
+local zoneEnabled = {
+    Kitchen = true,
+    Neighborhood = true,
+    Market = true,
+    City = true,
+    ["Pak GM Studio"] = true,
+}
+
+local zoneNames = {"Kitchen", "Neighborhood", "Market", "City", "Pak GM Studio"}
 
 local priorityMode = "RARE"
 
 local priorities = {
-
-          GoldenWok=100, StoneMortar=95, Fridge=90, RantangTower=85,
-
-          Microwave=75, Toaster=55, Thermos=45, RiceCooker=35,
-
-          WaterGallon=25, CrackerJar=20
-
+    GoldenWok=100, StoneMortar=95, Fridge=90, RantangTower=85,
+    Microwave=75, Toaster=55, Thermos=45, RiceCooker=35,
+    WaterGallon=25, CrackerJar=20,
+    MegaBaksoBowl=100, GiantDurian=90, GiantPineapple=90,
+    YellowTaxi=85, MegaRingLight=85, FlyingSaucer=80,
 }
 
+-- Recognized collectible names. Physical zone is assigned by Z position, not item type,
+-- because the scan showed a few object types duplicated across distant areas.
 local known = {
-
-          "GoldenWok", "StoneMortar", "Fridge", "RantangTower",
-
-          "Microwave", "Toaster", "Thermos", "RiceCooker",
-
-          "WaterGallon", "CrackerJar"
-
+    "GoldenWok", "StoneMortar", "Fridge", "RantangTower", "Microwave",
+    "Toaster", "Thermos", "RiceCooker", "WaterGallon", "CrackerJar",
+    "FlipFlop", "Bucket", "PottedPlant", "Kite", "Bicycle", "Mailbox",
+    "SatelliteDish", "WaterTower", "Becak", "FlyingSaucer",
+    "Watermelon", "Coconut", "BananaBunch", "WeighingScale", "FruitCrate",
+    "VendorUmbrella", "FoodCart", "GiantDurian", "GiantPineapple", "MegaBaksoBowl",
+    "TrafficCone", "FireHydrant", "TrashBin", "StreetLamp", "BusStopSign",
+    "VendingMachine", "YellowTaxi", "NeonSign", "TrafficLight", "MegaRingLight",
+    "GameController", "Headphones",
 }
+
+-- Approximate Z bands inferred from the supplied scan; adjust after live testing.
+local function zoneForPosition(p)
+    if p.Z < 420 then return "Kitchen" end
+    if p.Z < 800 then return "Neighborhood" end
+    if p.Z < 1240 then return "Market" end
+    if p.Z < 1700 then return "City" end
+    return "Pak GM Studio"
+end
 
 local function fmt(v)
 
@@ -207,8 +228,8 @@ gui.Parent = pg
 
 local frame = Instance.new("Frame")
 frame.Name = "MainFrame"
-frame.Size = UDim2.fromOffset(470, 510)
-frame.Position = UDim2.new(0.5, -235, 0.5, -255)
+frame.Size = UDim2.fromOffset(470, 680)
+frame.Position = UDim2.new(0.5, -235, 0.5, -340)
 frame.BackgroundColor3 = Color3.fromRGB(18, 18, 21)
 frame.BorderSizePixel = 0
 frame.Active = true
@@ -220,6 +241,32 @@ local function round(o, r)
     c.Parent = o
 end
 round(frame, 10)
+
+-- Responsive sizing for desktop and mobile. All existing controls retain their
+-- positions; UIScale scales the complete interface together to prevent clipping.
+local frameScale = Instance.new("UIScale")
+frameScale.Name = "ResponsiveScale"
+frameScale.Scale = 1
+frameScale.Parent = frame
+local layoutMode = "AUTO"
+local function applyLayoutMode()
+    local camera = Workspace.CurrentCamera
+    local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
+    local safeWidth = math.max(240, viewport.X - 24)
+    local safeHeight = math.max(320, viewport.Y - 48)
+    local fitScale = math.min(safeWidth / 470, safeHeight / 680, 1)
+    local scale = fitScale
+    if layoutMode == "COMPACT" then
+        scale = fitScale * 0.84
+    elseif layoutMode == "LARGE" then
+        scale = fitScale
+    end
+    -- Avoid a hard minimum that could make the panel exceed very small screens.
+    frameScale.Scale = math.max(0.25, scale)
+    frame.Position = UDim2.new(0.5, -(470 * frameScale.Scale) / 2,
+                               0.5, -(680 * frameScale.Scale) / 2)
+end
+applyLayoutMode()
 
 local stroke = Instance.new("UIStroke")
 stroke.Color = Color3.fromRGB(255, 193, 91)
@@ -236,7 +283,7 @@ titleBar.Parent = frame
 round(titleBar, 10)
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -100, 1, 0)
+title.Size = UDim2.new(1, -145, 1, 0)
 title.Position = UDim2.fromOffset(12, 0)
 title.BackgroundTransparency = 1
 title.Text = "PAPAMAMIN AUTO"
@@ -260,8 +307,33 @@ local function topButton(name, txt, x, color)
     round(b, 6)
     return b
 end
+local layoutButton = topButton("LayoutMode", "AUTO", -108, Color3.fromRGB(65, 90, 125))
+layoutButton.Size = UDim2.fromOffset(36, 28)
+layoutButton.Position = UDim2.new(1, -112, 0, 6)
+layoutButton.TextSize = 10
 local minimizeButton = topButton("Minimize", "−", -72, Color3.fromRGB(75, 75, 85))
 local close = topButton("Close", "X", -36, Color3.fromRGB(190, 45, 45))
+layoutButton.MouseButton1Click:Connect(function()
+    if layoutMode == "AUTO" then
+        layoutMode = "COMPACT"
+    elseif layoutMode == "COMPACT" then
+        layoutMode = "LARGE"
+    else
+        layoutMode = "AUTO"
+    end
+    layoutButton.Text = layoutMode
+    applyLayoutMode()
+end)
+local function bindViewport(camera)
+    if camera then
+        camera:GetPropertyChangedSignal("ViewportSize"):Connect(applyLayoutMode)
+    end
+end
+bindViewport(Workspace.CurrentCamera)
+Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    bindViewport(Workspace.CurrentCamera)
+    applyLayoutMode()
+end)
 
 local throwTab = Instance.new("TextButton")
 throwTab.Name = "ThrowTab"
@@ -398,13 +470,13 @@ local function label(txt, y, h, color, size)
     l.Parent = collectPage
     return l
 end
-label("PAPAMAMIN AUTO COLLECT v1.1", 9, 28, Color3.fromRGB(255,193,91), 18)
+label("PAPAMAMIN AUTO COLLECT v2 | ALL GROUPS", 9, 28, Color3.fromRGB(255,193,91), 16)
 status = label("STATUS: OFF", 41, 25, Color3.fromRGB(230,230,230), 13)
-local info = label("PAN: N/A | TARGET: N/A", 68, 55, Color3.fromRGB(255,193,91), 12)
+local info = label("PAN: N/A | TARGET: N/A", 68, 50, Color3.fromRGB(255,193,91), 11)
 
 local out = Instance.new("TextBox")
 out.Size = UDim2.new(1, -20, 0, 205)
-out.Position = UDim2.fromOffset(10, 127)
+out.Position = UDim2.fromOffset(10, 385)
 out.BackgroundColor3 = Color3.fromRGB(30,30,33)
 out.TextColor3 = Color3.fromRGB(235,235,235)
 out.Font = Enum.Font.Code
@@ -432,11 +504,73 @@ local function btn(t, x, y, w)
     round(b, 6)
     return b
 end
-local on = btn("AUTO ON", 10, 340, 145)
-local off = btn("AUTO OFF", 162, 340, 145)
-local reverse = btn("A/D: NORMAL", 314, 340, 145)
-local priority = btn("MODE: RARE", 10, 379, 145)
-local copy = btn("COPY LOG", 162, 379, 145)
+local on = btn("AUTO ON", 10, 600, 140)
+local off = btn("AUTO OFF", 158, 600, 140)
+local reverse = btn("A/D: NORMAL", 306, 600, 153)
+local priority = btn("MODE: RARE", 10, 639, 140)
+local copy = btn("COPY LOG", 158, 639, 140)
+
+local zoneTitle = Instance.new("TextLabel")
+zoneTitle.Size = UDim2.new(1, -20, 0, 22)
+zoneTitle.Position = UDim2.fromOffset(10, 118)
+zoneTitle.BackgroundTransparency = 1
+zoneTitle.Text = "TARGET GROUPS — ON = ACTIVE / OFF = IGNORED"
+zoneTitle.TextColor3 = Color3.fromRGB(255,193,91)
+zoneTitle.TextSize = 12
+zoneTitle.Font = Enum.Font.GothamBold
+zoneTitle.TextXAlignment = Enum.TextXAlignment.Left
+zoneTitle.Parent = collectPage
+
+local zoneButtons = {}
+local function updateZoneButton(zone)
+    local b = zoneButtons[zone]
+    if not b then return end
+    local enabled = zoneEnabled[zone]
+    b.Text = zone .. " : " .. (enabled and "ON" or "OFF")
+    b.BackgroundColor3 = enabled and Color3.fromRGB(35,145,80) or Color3.fromRGB(95,48,48)
+    b.TextColor3 = Color3.new(1,1,1)
+end
+for i, zone in ipairs(zoneNames) do
+    local col = (i-1) % 2
+    local row = math.floor((i-1) / 2)
+    local b = Instance.new("TextButton")
+    b.Name = "ZoneToggle_" .. zone:gsub("%W", "")
+    b.Size = UDim2.fromOffset(220, 31)
+    b.Position = UDim2.fromOffset(10 + col*230, 143 + row*35)
+    b.BackgroundColor3 = Color3.fromRGB(35,145,80)
+    b.TextColor3 = Color3.new(1,1,1)
+    b.TextSize = 12
+    b.Font = Enum.Font.GothamBold
+    b.Parent = collectPage
+    round(b, 6)
+    zoneButtons[zone] = b
+    updateZoneButton(zone)
+    b.MouseButton1Click:Connect(function()
+        zoneEnabled[zone] = not zoneEnabled[zone]
+        updateZoneButton(zone)
+        itemCache = scanItems()
+        if target and not zoneEnabled[target.zone] then target = nil; releaseAll() end
+        log("GROUP " .. zone .. " = " .. (zoneEnabled[zone] and "ON" or "OFF"))
+        refresh()
+    end)
+end
+local allZonesButton = btn("ALL GROUPS ON", 10, 250, 220)
+allZonesButton.Size = UDim2.fromOffset(220, 31)
+local noZonesButton = btn("ALL GROUPS OFF", 240, 250, 219)
+noZonesButton.Size = UDim2.fromOffset(219, 31)
+local function setAllZones(enabled)
+    for _, zone in ipairs(zoneNames) do
+        zoneEnabled[zone] = enabled
+        updateZoneButton(zone)
+    end
+    itemCache = scanItems()
+    target = nil
+    releaseAll()
+    log(enabled and "ALL GROUPS = ON" or "ALL GROUPS = OFF")
+    refresh()
+end
+allZonesButton.MouseButton1Click:Connect(function() setAllZones(true) end)
+noZonesButton.MouseButton1Click:Connect(function() setAllZones(false) end)
 
 -- AUTO THROW UI.
 local throwTitle = Instance.new("TextLabel")
@@ -489,7 +623,7 @@ local throwInfo = Instance.new("TextLabel")
 throwInfo.Size = UDim2.new(1, -24, 0, 55)
 throwInfo.Position = UDim2.fromOffset(12, 140)
 throwInfo.BackgroundTransparency = 1
-throwInfo.Text = "Urutan: tekan E, tunggu delay, tekan E, lalu tunggu jeda round 5 detik."
+throwInfo.Text = "Saat START: menuju ThrowZone dahulu (jika belum di dalam), lalu tekan E dua kali dengan delay dan jeda round 5 detik."
 throwInfo.TextColor3 = Color3.fromRGB(190,190,200)
 throwInfo.TextSize = 12
 throwInfo.Font = Enum.Font.Gotham
@@ -539,8 +673,9 @@ local function waitThrow(seconds, token)
     end
     return true
 end
--- Before Auto Throw starts, route the character to Workspace.Map.ThrowZone.
--- If the character is already inside the zone bounds, skip movement entirely.
+
+-- Navigate to the game's ThrowZone before starting the existing throw cycle.
+-- Uses normal Humanoid:MoveTo movement (not teleporting). If already inside, skip movement.
 local function getCharacterRoot()
     local character = player.Character
     if not character then return nil, nil end
@@ -551,7 +686,6 @@ local function isInsideThrowZone(root, zone)
     if not root or not zone or not zone:IsA("BasePart") then return false end
     local localPos = zone.CFrame:PointToObjectSpace(root.Position)
     local half = zone.Size * 0.5
-    -- A small margin makes the check tolerant of character/root offsets.
     return math.abs(localPos.X) <= half.X + 1.5
        and math.abs(localPos.Z) <= half.Z + 1.5
        and localPos.Y >= -half.Y - 5
@@ -566,43 +700,30 @@ local function moveToThrowZone(token)
         throwStatus.Text = "STATUS: THROWZONE NOT FOUND"
         return false
     end
-
     local humanoid, root = getCharacterRoot()
     if not humanoid or not root then
         log("CHARACTER ROOT/HUMANOID NOT FOUND")
         throwStatus.Text = "STATUS: CHARACTER NOT READY"
         return false
     end
-
     if isInsideThrowZone(root, zone) then
         log("Already inside ThrowZone; skipping navigation")
         return true
     end
-
     throwStatus.Text = "STATUS: MOVING TO THROWZONE"
-    log("Moving to ThrowZone from " .. string.format("%.1f, %.1f, %.1f", root.Position.X, root.Position.Y, root.Position.Z))
-
-    -- Aim for the zone's center on the character's current floor height;
-    -- Humanoid:MoveTo uses normal game movement rather than teleporting.
-    local destination = Vector3.new(zone.Position.X, root.Position.Y, zone.Position.Z)
-    humanoid:MoveTo(destination)
+    log("Moving to ThrowZone")
+    humanoid:MoveTo(Vector3.new(zone.Position.X, root.Position.Y, zone.Position.Z))
     local deadline = os.clock() + 18
     while os.clock() < deadline do
-        if throwState.Closed or not throwState.Running or throwState.Token ~= token then
-            return false
-        end
+        if throwState.Closed or not throwState.Running or throwState.Token ~= token then return false end
         humanoid, root = getCharacterRoot()
-        if not humanoid or not root then
-            task.wait(0.2)
-        elseif isInsideThrowZone(root, zone) then
-            log("Reached ThrowZone at " .. string.format("%.1f, %.1f, %.1f", root.Position.X, root.Position.Y, root.Position.Z))
+        if humanoid and root and isInsideThrowZone(root, zone) then
+            log("Reached ThrowZone")
             return true
-        else
-            task.wait(0.2)
         end
+        task.wait(0.2)
     end
-
-    log("Could not reach ThrowZone within 18s; Auto Throw paused")
+    log("Could not reach ThrowZone within 18 seconds; Auto Throw paused")
     throwStatus.Text = "STATUS: THROWZONE UNREACHED"
     return false
 end
@@ -618,16 +739,13 @@ throwStart.MouseButton1Click:Connect(function()
     throwStatus.Text = "STATUS: CHECKING THROWZONE"
     throwStatus.TextColor3 = Color3.fromRGB(255,210,100)
     task.spawn(function()
-        -- Navigation happens once at Auto Throw activation. Existing auto-collect
-        -- flight tracking and the throw cycle continue after arrival.
         if not moveToThrowZone(token) then
-            if throwState.Token == token then
+            if throwState.Token == token and throwState.Running then
                 throwState.Running = false
                 throwStatus.TextColor3 = Color3.fromRGB(255,100,100)
             end
             return
         end
-        if not throwState.Running or throwState.Closed or throwState.Token ~= token then return end
         throwStatus.Text = "STATUS: RUNNING"
         throwStatus.TextColor3 = Color3.fromRGB(80,255,130)
         while throwState.Running and not throwState.Closed and throwState.Token == token do
@@ -640,50 +758,41 @@ throwStart.MouseButton1Click:Connect(function()
 end)
 throwStop.MouseButton1Click:Connect(stopThrow)
 
-local function refresh()
-
+refresh = function()
           out.Text=table.concat(lines,"\n")
-
 end
 
 local function itemKind(name)
-
-          for _, kind in ipairs(known) do
-
-                    if name:lower():find(kind:lower(),1,true) then return kind end
-
-          end
-
+    local lowerName = string.lower(name)
+    for _, fragment in ipairs(known) do
+        if string.find(lowerName, string.lower(fragment), 1, true) then
+            return fragment
+        end
+    end
+    return nil
 end
 
-local function scanItems()
-
-          local f=Workspace:FindFirstChild("PT_Field")
-
-          if not f then return {} end
-
-          local found={}
-
-          for _,o in ipairs(f:GetChildren()) do
-
-                    local kind=itemKind(o.Name)
-
-                    if kind then
-
-                              local p=posOf(o)
-
-                              if p and p.Z < zoneEndZ and p.Z > 0 then
-
-                                        table.insert(found,{obj=o,pos=p,kind=kind})
-
-                              end
-
-                    end
-
-          end
-
-          return found
-
+scanItems = function()
+    local f = Workspace:FindFirstChild("PT_Field")
+    if not f then
+        log("SCAN: Workspace.PT_Field not found")
+        return {}
+    end
+    local found, seen = {}, {}
+    for _, o in ipairs(f:GetDescendants()) do
+        local kind = itemKind(o.Name)
+        if kind then
+            local p = posOf(o)
+            if p then
+                local zone = zoneForPosition(p)
+                if zoneEnabled[zone] and not seen[o] then
+                    seen[o] = true
+                    table.insert(found, {obj=o, pos=p, kind=kind, zone=zone})
+                end
+            end
+        end
+    end
+    return found
 end
 
 local function chooseTarget(panPos, speed)
@@ -730,7 +839,7 @@ local function chooseTarget(panPos, speed)
 
                                                             bestScore=score
 
-                                                            best={obj=item.obj,kind=item.kind,pos=p}
+                                                            best={obj=item.obj,kind=item.kind,zone=item.zone,pos=p}
 
                                                   end
 
@@ -933,7 +1042,7 @@ task.spawn(function()
                                                   lastFieldRefresh=now
 
                                                   collectedEstimate=0
-                                                  log("FLIGHT START CONFIRMED: "..fmt(p).." | items="..#itemCache)
+                                                  log("FLIGHT START CONFIRMED: "..fmt(p).." | enabled-group items="..#itemCache)
 
                                                   refresh()
 
@@ -1080,7 +1189,7 @@ task.spawn(function()
 
                                         if target then
 
-                                                  log("TARGET: "..target.kind.." @ "..fmt(target.pos))
+                                                  log("TARGET: "..target.kind.." ["..target.zone.."] @ "..fmt(target.pos))
 
                                                   refresh()
 
@@ -1126,7 +1235,7 @@ task.spawn(function()
 
                               info.Text=string.format("PAN: %s | %.0f studs/s\nTARGET: %s | dX=%.1f dY=%.1f dZ=%.1f",
 
-                                        fmt(p),speed,target.kind,dx,dy,dz)
+                                        fmt(p),speed,target.kind.."/"..target.zone,dx,dy,dz)
 
                               if now-lastLog>2 then
 
