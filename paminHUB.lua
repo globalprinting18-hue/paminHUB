@@ -12,6 +12,14 @@ local Workspace = game:GetService("Workspace")
 
 local VIM = game:GetService("VirtualInputManager")
 
+-- COBA ATUR ORIENTASI HORIZONTAL
+local StarterGui = game:GetService("StarterGui")
+
+pcall(function()
+    StarterGui.ScreenOrientation =
+        Enum.ScreenOrientation.LandscapeSensor
+end)
+
 local player = Players.LocalPlayer
 
 local pg = player:WaitForChild("PlayerGui")
