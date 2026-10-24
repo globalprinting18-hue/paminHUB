@@ -256,6 +256,29 @@ local function round(o, r)
 end
 round(frame, 10)
 
+-- Responsive layout modes: AUTO fits the available viewport, COMPACT is smaller,
+-- and LARGE uses the largest size that still fits. UIScale keeps all controls aligned.
+local frameScale = Instance.new("UIScale")
+frameScale.Name = "ResponsiveScale"
+frameScale.Scale = 1
+frameScale.Parent = frame
+local layoutMode = "AUTO"
+local function applyLayoutMode()
+    local camera = Workspace.CurrentCamera
+    local viewport = camera and camera.ViewportSize or Vector2.new(1280, 720)
+    local fitScale = math.min((viewport.X * 0.94) / 470, (viewport.Y * 0.90) / 680, 1)
+    fitScale = math.max(fitScale, 0.45)
+    local scale = fitScale
+    if layoutMode == "COMPACT" then
+        scale = math.min(fitScale * 0.82, 0.82)
+    elseif layoutMode == "LARGE" then
+        scale = fitScale
+    end
+    frameScale.Scale = scale
+    frame.Position = UDim2.new(0.5, -235 * scale, 0.5, -340 * scale)
+end
+applyLayoutMode()
+
 local stroke = Instance.new("UIStroke")
 stroke.Color = Color3.fromRGB(255, 193, 91)
 stroke.Thickness = 2
@@ -271,7 +294,7 @@ titleBar.Parent = frame
 round(titleBar, 10)
 
 local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, -100, 1, 0)
+title.Size = UDim2.new(1, -136, 1, 0)
 title.Position = UDim2.fromOffset(12, 0)
 title.BackgroundTransparency = 1
 title.Text = "PAPAMAMIN AUTO"
@@ -295,8 +318,32 @@ local function topButton(name, txt, x, color)
     round(b, 6)
     return b
 end
+local layoutButton = topButton("LayoutMode", "AUTO", -108, Color3.fromRGB(65, 90, 125))
+layoutButton.Size = UDim2.fromOffset(36, 28)
+layoutButton.Position = UDim2.new(1, -112, 0, 6)
+layoutButton.TextSize = 10
 local minimizeButton = topButton("Minimize", "−", -72, Color3.fromRGB(75, 75, 85))
 local close = topButton("Close", "X", -36, Color3.fromRGB(190, 45, 45))
+layoutButton.MouseButton1Click:Connect(function()
+    if layoutMode == "AUTO" then
+        layoutMode = "COMPACT"
+    elseif layoutMode == "COMPACT" then
+        layoutMode = "LARGE"
+    else
+        layoutMode = "AUTO"
+    end
+    layoutButton.Text = layoutMode
+    applyLayoutMode()
+end)
+if Workspace.CurrentCamera then
+    Workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(applyLayoutMode)
+end
+Workspace:GetPropertyChangedSignal("CurrentCamera"):Connect(function()
+    if Workspace.CurrentCamera then
+        Workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(applyLayoutMode)
+        applyLayoutMode()
+    end
+end)
 
 local throwTab = Instance.new("TextButton")
 throwTab.Name = "ThrowTab"
