@@ -269,8 +269,8 @@ end
 applyLayoutMode()
 
 local stroke = Instance.new("UIStroke")
-stroke.Color = Color3.fromRGB(255, 193, 91)
-stroke.Thickness = 2
+stroke.Color = Color3.fromRGB(18, 18, 21)
+stroke.Thickness = 0
 stroke.Parent = frame
 
 local titleBar = Instance.new("Frame")
@@ -286,8 +286,8 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -145, 1, 0)
 title.Position = UDim2.fromOffset(12, 0)
 title.BackgroundTransparency = 1
-title.Text = "PAPAMAMIN AUTO"
-title.TextColor3 = Color3.fromRGB(255, 193, 91)
+title.Text = "PaminHub"
+title.TextColor3 = Color3.fromRGB(245, 245, 245)
 title.TextSize = 17
 title.Font = Enum.Font.GothamBold
 title.TextXAlignment = Enum.TextXAlignment.Left
@@ -386,6 +386,7 @@ local function showTab(which)
 end
 throwTab.MouseButton1Click:Connect(function() showTab("throw") end)
 collectTab.MouseButton1Click:Connect(function() showTab("collect") end)
+showTab("collect")
 
 -- Drag the whole panel using its title bar.
 local UserInputService = game:GetService("UserInputService")
@@ -455,7 +456,7 @@ miniButton.MouseButton1Click:Connect(function()
     miniButton.Visible = false
 end)
 
--- AUTO COLLECT UI helpers: all controls belong to CollectPage.
+-- AUTO COLLECT UI helpers: redesigned to match the compact PaminHub layout.
 local function label(txt, y, h, color, size)
     local l = Instance.new("TextLabel")
     l.Size = UDim2.new(1, -20, 0, h)
@@ -470,94 +471,149 @@ local function label(txt, y, h, color, size)
     l.Parent = collectPage
     return l
 end
-label("PAPAMAMIN AUTO COLLECT v2 | ALL GROUPS", 9, 28, Color3.fromRGB(255,193,91), 16)
-status = label("STATUS: OFF", 41, 25, Color3.fromRGB(230,230,230), 13)
-local info = label("PAN: N/A | TARGET: N/A", 68, 50, Color3.fromRGB(255,193,91), 11)
 
-local out = Instance.new("TextBox")
-out.Size = UDim2.new(1, -20, 0, 205)
-out.Position = UDim2.fromOffset(10, 385)
-out.BackgroundColor3 = Color3.fromRGB(30,30,33)
-out.TextColor3 = Color3.fromRGB(235,235,235)
-out.Font = Enum.Font.Code
-out.TextSize = 12
-out.TextXAlignment = Enum.TextXAlignment.Left
-out.TextYAlignment = Enum.TextYAlignment.Top
-out.TextEditable = false
-out.MultiLine = true
-out.ClearTextOnFocus = false
-out.TextWrapped = false
-out.Text = "Ready. Press AUTO ON once; it stays enabled between throws."
-out.Parent = collectPage
-round(out, 6)
-
-local function btn(t, x, y, w)
-    local b = Instance.new("TextButton")
-    b.Size = UDim2.fromOffset(w, 34)
-    b.Position = UDim2.fromOffset(x, y)
-    b.BackgroundColor3 = Color3.fromRGB(255,193,91)
-    b.TextColor3 = Color3.fromRGB(18,18,18)
-    b.Font = Enum.Font.GothamBold
-    b.TextSize = 12
-    b.Text = t
-    b.Parent = collectPage
-    round(b, 6)
-    return b
-end
-local on = btn("AUTO ON", 10, 600, 140)
-local off = btn("AUTO OFF", 158, 600, 140)
-local reverse = btn("A/D: NORMAL", 306, 600, 153)
-local priority = btn("MODE: RARE", 10, 639, 140)
-local copy = btn("COPY LOG", 158, 639, 140)
+label("PAPAMAMIN AUTO COLLECT v2.2 | FINAL ZONE", 9, 24, Color3.fromRGB(255,193,91), 15)
+status = label("STATUS: OFF", 34, 22, Color3.fromRGB(230,230,230), 11)
+local info = label("PAN: N/A | TARGET: N/A", 56, 42, Color3.fromRGB(255,193,91), 9)
 
 local zoneTitle = Instance.new("TextLabel")
 zoneTitle.Size = UDim2.new(1, -20, 0, 22)
-zoneTitle.Position = UDim2.fromOffset(10, 118)
+zoneTitle.Position = UDim2.fromOffset(10, 100)
 zoneTitle.BackgroundTransparency = 1
 zoneTitle.Text = "TARGET GROUPS — ON = ACTIVE / OFF = IGNORED"
 zoneTitle.TextColor3 = Color3.fromRGB(255,193,91)
-zoneTitle.TextSize = 12
+zoneTitle.TextSize = 10
 zoneTitle.Font = Enum.Font.GothamBold
 zoneTitle.TextXAlignment = Enum.TextXAlignment.Left
 zoneTitle.Parent = collectPage
 
+-- Small switch used by the redesigned GUI.
+local function makeSwitch(name, y, initial, callback)
+    local row = Instance.new("Frame")
+    row.Name = name .. "_Row"
+    row.Size = UDim2.new(1, -20, 0, 31)
+    row.Position = UDim2.fromOffset(10, y)
+    row.BackgroundTransparency = 1
+    row.Parent = collectPage
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Name = "Label"
+    textLabel.Size = UDim2.new(1, -110, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.TextColor3 = Color3.fromRGB(245,245,245)
+    textLabel.TextSize = 12
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.Parent = row
+
+    local track = Instance.new("TextButton")
+    track.Name = "Switch"
+    track.Size = UDim2.fromOffset(92, 28)
+    track.Position = UDim2.new(1, -92, 0, 1)
+    track.BackgroundColor3 = Color3.fromRGB(48,50,58)
+    track.BorderSizePixel = 0
+    track.Text = ""
+    track.AutoButtonColor = false
+    track.Parent = row
+    round(track, 6)
+
+    local knob = Instance.new("Frame")
+    knob.Name = "State"
+    knob.Size = UDim2.fromOffset(44, 26)
+    knob.BackgroundColor3 = Color3.fromRGB(0,165,75)
+    knob.BorderSizePixel = 0
+    knob.Parent = track
+    round(knob, 6)
+
+    local state = initial and true or false
+    local function render()
+        textLabel.Text = name
+        knob.BackgroundColor3 = state and Color3.fromRGB(0,165,75) or Color3.fromRGB(235,0,25)
+        knob.Position = state and UDim2.new(1, -44, 0, 1) or UDim2.fromOffset(0, 1)
+    end
+    local function setState(value, fire)
+        state = value and true or false
+        render()
+        if fire and callback then callback(state) end
+    end
+    track.MouseButton1Click:Connect(function()
+        setState(not state, true)
+    end)
+    render()
+    return {
+        Row = row,
+        Button = track,
+        Set = setState,
+        Get = function() return state end,
+    }
+end
+
+-- AUTO COLLECT master switch. The existing AUTO ON/OFF buttons below are kept
+-- as hidden compatibility controls so the original callbacks still work.
+local function setAutoCollect(enabled)
+    if enabled then
+        running=true
+        flightActive=false
+        collectedEstimate=0
+        previousPan,previousPos,previousTime=nil,nil,nil
+        lastPanMove=0
+        candidateFrames=0
+        lostSince=nil
+        stoppedSince=nil
+        initialCamera=Workspace.CurrentCamera and Workspace.CurrentCamera.CFrame.Position
+        target=nil
+        lastFieldRefresh=0
+        log("AUTO ON: persistent mode; waiting for flying pan")
+    else
+        stopAuto("AUTO OFF")
+    end
+    refresh()
+end
+
+local autoSwitch = makeSwitch("AUTO COLLECT", 126, false, function(enabled)
+    setAutoCollect(enabled)
+end)
+
+local zoneSwitches = {}
+local zoneY = {
+    Kitchen = 164,
+    Neighborhood = 202,
+    Market = 240,
+    City = 278,
+    ["Pak GM Studio"] = 316,
+}
+
 local zoneButtons = {}
 local function updateZoneButton(zone)
-    local b = zoneButtons[zone]
-    if not b then return end
-    local enabled = zoneEnabled[zone]
-    b.Text = zone .. " : " .. (enabled and "ON" or "OFF")
-    b.BackgroundColor3 = enabled and Color3.fromRGB(35,145,80) or Color3.fromRGB(95,48,48)
-    b.TextColor3 = Color3.new(1,1,1)
+    local control = zoneSwitches[zone]
+    if not control then return end
+    control.Set(zoneEnabled[zone], false)
 end
-for i, zone in ipairs(zoneNames) do
-    local col = (i-1) % 2
-    local row = math.floor((i-1) / 2)
-    local b = Instance.new("TextButton")
-    b.Name = "ZoneToggle_" .. zone:gsub("%W", "")
-    b.Size = UDim2.fromOffset(220, 31)
-    b.Position = UDim2.fromOffset(10 + col*230, 143 + row*35)
-    b.BackgroundColor3 = Color3.fromRGB(35,145,80)
-    b.TextColor3 = Color3.new(1,1,1)
-    b.TextSize = 12
-    b.Font = Enum.Font.GothamBold
-    b.Parent = collectPage
-    round(b, 6)
-    zoneButtons[zone] = b
-    updateZoneButton(zone)
-    b.MouseButton1Click:Connect(function()
-        zoneEnabled[zone] = not zoneEnabled[zone]
-        updateZoneButton(zone)
+
+for _, zone in ipairs(zoneNames) do
+    local control = makeSwitch(zone, zoneY[zone], zoneEnabled[zone], function(enabled)
+        zoneEnabled[zone] = enabled
         itemCache = scanItems()
-        if target and not zoneEnabled[target.zone] then target = nil; releaseAll() end
-        log("GROUP " .. zone .. " = " .. (zoneEnabled[zone] and "ON" or "OFF"))
+        if target and not zoneEnabled[target.zone] then
+            target = nil
+            releaseAll()
+        end
+        log("GROUP " .. zone .. " = " .. (enabled and "ON" or "OFF"))
         refresh()
     end)
+    zoneSwitches[zone] = control
+    zoneButtons[zone] = control.Button
 end
-local allZonesButton = btn("ALL GROUPS ON", 10, 250, 220)
-allZonesButton.Size = UDim2.fromOffset(220, 31)
-local noZonesButton = btn("ALL GROUPS OFF", 240, 250, 219)
-noZonesButton.Size = UDim2.fromOffset(219, 31)
+
+-- Keep the original ALL GROUPS controls functional, but hide them from the
+-- compact layout because the five switches already expose the same setting.
+local allZonesButton = Instance.new("TextButton")
+allZonesButton.Visible = false
+allZonesButton.Parent = collectPage
+local noZonesButton = Instance.new("TextButton")
+noZonesButton.Visible = false
+noZonesButton.Parent = collectPage
+
 local function setAllZones(enabled)
     for _, zone in ipairs(zoneNames) do
         zoneEnabled[zone] = enabled
@@ -571,6 +627,102 @@ local function setAllZones(enabled)
 end
 allZonesButton.MouseButton1Click:Connect(function() setAllZones(true) end)
 noZonesButton.MouseButton1Click:Connect(function() setAllZones(false) end)
+
+local modeControl = Instance.new("TextButton")
+modeControl.Name = "ModeButton"
+modeControl.Size = UDim2.fromOffset(92, 28)
+modeControl.Position = UDim2.new(1, -102, 0, 354)
+modeControl.BackgroundColor3 = Color3.fromRGB(255,193,91)
+modeControl.TextColor3 = Color3.fromRGB(18,18,21)
+modeControl.Text = "NEAREST"
+modeControl.TextSize = 12
+modeControl.Font = Enum.Font.GothamBold
+modeControl.Parent = collectPage
+round(modeControl, 6)
+
+local modeLabel = label("MODE", 350, 30, Color3.fromRGB(245,245,245), 12)
+modeLabel.Size = UDim2.fromOffset(120, 30)
+
+local adControl = Instance.new("TextButton")
+adControl.Name = "ADButton"
+adControl.Size = UDim2.fromOffset(92, 28)
+adControl.Position = UDim2.new(1, -102, 0, 392)
+adControl.BackgroundColor3 = Color3.fromRGB(255,193,91)
+adControl.TextColor3 = Color3.fromRGB(18,18,21)
+adControl.Text = "NORMAL"
+adControl.TextSize = 12
+adControl.Font = Enum.Font.GothamBold
+adControl.Parent = collectPage
+round(adControl, 6)
+
+local adLabel = label("A/D", 388, 30, Color3.fromRGB(245,245,245), 12)
+adLabel.Size = UDim2.fromOffset(120, 30)
+
+-- Log area is clipped inside its own frame so text can never spill outside GUI.
+local logFrame = Instance.new("Frame")
+logFrame.Name = "LogFrame"
+logFrame.Size = UDim2.new(1, -20, 0, 88)
+logFrame.Position = UDim2.fromOffset(10, 426)
+logFrame.BackgroundColor3 = Color3.fromRGB(30,30,33)
+logFrame.BorderSizePixel = 0
+logFrame.ClipsDescendants = true
+logFrame.Parent = collectPage
+round(logFrame, 6)
+
+local out = Instance.new("TextBox")
+out.Name = "Log"
+out.Size = UDim2.new(1, -10, 1, -8)
+out.Position = UDim2.fromOffset(5, 4)
+out.BackgroundTransparency = 1
+out.TextColor3 = Color3.fromRGB(225,225,225)
+out.Font = Enum.Font.Code
+out.TextSize = 9
+out.TextXAlignment = Enum.TextXAlignment.Left
+out.TextYAlignment = Enum.TextYAlignment.Bottom
+out.TextEditable = false
+out.MultiLine = true
+out.ClearTextOnFocus = false
+out.TextWrapped = false
+out.Text = "Ready. Press AUTO COLLECT to start."
+out.ClipsDescendants = true
+out.Parent = logFrame
+
+local copy = Instance.new("TextButton")
+copy.Name = "CopyLog"
+copy.Size = UDim2.fromOffset(92, 28)
+copy.Position = UDim2.new(0.5, -46, 0, 524)
+copy.BackgroundColor3 = Color3.fromRGB(255,193,91)
+copy.TextColor3 = Color3.fromRGB(18,18,18)
+copy.Font = Enum.Font.GothamBold
+copy.TextSize = 12
+copy.Text = "COPY LOG"
+copy.Parent = collectPage
+round(copy, 6)
+
+-- Compatibility controls for scripts that may still look for the old button names.
+on = Instance.new("TextButton")
+on.Name = "AutoOnCompat"
+on.Visible = false
+on.Parent = collectPage
+off = Instance.new("TextButton")
+off.Name = "AutoOffCompat"
+off.Visible = false
+off.Parent = collectPage
+
+modeControl.MouseButton1Click:Connect(function()
+    priorityMode = priorityMode == "RARE" and "NEAREST" or "RARE"
+    modeControl.Text = priorityMode
+    log("Priority: " .. priorityMode)
+    refresh()
+end)
+
+adControl.MouseButton1Click:Connect(function()
+    reverseAD = not reverseAD
+    adControl.Text = reverseAD and "REVERSED" or "NORMAL"
+    releaseAll()
+    log("Reverse A/D = " .. tostring(reverseAD))
+    refresh()
+end)
 
 -- AUTO THROW UI.
 local throwTitle = Instance.new("TextLabel")
@@ -856,83 +1008,24 @@ local function chooseTarget(panPos, speed)
 end
 
 on.MouseButton1Click:Connect(function()
-
-          running=true
-
-          flightActive=false
-
-          collectedEstimate=0
-
-          previousPan,previousPos,previousTime=nil,nil,nil
-
-          lastPanMove=0
-
-          candidateFrames=0
-
-          lostSince=nil
-
-          stoppedSince=nil
-
-          initialCamera=Workspace.CurrentCamera and Workspace.CurrentCamera.CFrame.Position
-
-          target=nil
-
-          lastFieldRefresh=0
-
-          log("AUTO ON: persistent mode; waiting for flying pan")
-
-          refresh()
-
+          setAutoCollect(true)
+          autoSwitch.Set(true, false)
 end)
 
 off.MouseButton1Click:Connect(function()
-
-          stopAuto("AUTO OFF")
-
-          refresh()
-
+          setAutoCollect(false)
+          autoSwitch.Set(false, false)
 end)
 
-reverse.MouseButton1Click:Connect(function()
-
-          reverseAD=not reverseAD
-
-          reverse.Text=reverseAD and "A/D: REVERSED" or "A/D: NORMAL"
-
-          releaseAll()
-
-          log("Reverse A/D = "..tostring(reverseAD))
-
-          refresh()
-
-end)
-
-priority.MouseButton1Click:Connect(function()
-
-          priorityMode=priorityMode=="RARE" and "NEAREST" or "RARE"
-
-          priority.Text="MODE: "..priorityMode
-
-          log("Priority: "..priorityMode)
-
-          refresh()
-
-end)
+-- The visible MODE and A/D controls are modeControl and adControl above.
 
 copy.MouseButton1Click:Connect(function()
-
           if typeof(setclipboard)=="function" then
-
                     local ok=pcall(setclipboard,table.concat(lines,"\n"))
-
                     status.Text=ok and "STATUS: COPIED" or "STATUS: COPY FAILED"
-
           else
-
                     status.Text="STATUS: CLIPBOARD UNAVAILABLE"
-
           end
-
 end)
 
 close.MouseButton1Click:Connect(function()
