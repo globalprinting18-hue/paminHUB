@@ -827,6 +827,250 @@ throwStop.Parent = throwPage
 round(throwStop, 7)
 
 local throwState = { Running = false, Closed = false, Delay = 1.9, RoundDelay = 5, Token = 0 }
+
+-- SETTINGS / REJOIN / AUTO EXECUTE (Delta-compatible when the executor exposes these APIs)
+local HttpService = game:GetService("HttpService")
+local TeleportService = game:GetService("TeleportService")
+local SETTINGS_FILE = "PaminHub_Settings.json"
+local autoRejoin = false
+local autoExecute = false
+local autoExecuteUrl = ""
+
+local function makeActionButton(name, text, x, y, width, color)
+    local b = Instance.new("TextButton")
+    b.Name = name
+    b.Size = UDim2.fromOffset(width, 38)
+    b.Position = UDim2.fromOffset(x, y)
+    b.BackgroundColor3 = color
+    b.Text = text
+    b.TextColor3 = Color3.new(1, 1, 1)
+    b.TextSize = 12
+    b.Font = Enum.Font.GothamBold
+    b.Parent = throwPage
+    round(b, 7)
+    return b
+end
+
+local saveSettingsButton = makeActionButton(
+    "SaveSettings", "SAVE SETTINGS", 12, 280, 205, Color3.fromRGB(35, 125, 75)
+)
+local loadSettingsButton = makeActionButton(
+    "LoadSettings", "LOAD SETTINGS", 243, 280, 205, Color3.fromRGB(55, 95, 155)
+)
+local rejoinButton = makeActionButton(
+    "AutoRejoin", "AUTO REJOIN: OFF", 12, 326, 205, Color3.fromRGB(75, 75, 85)
+)
+local executeButton = makeActionButton(
+    "AutoExecute", "AUTO EXECUTE: OFF", 243, 326, 205, Color3.fromRGB(75, 75, 85)
+)
+
+local executeUrlBox = Instance.new("TextBox")
+executeUrlBox.Name = "AutoExecuteURL"
+executeUrlBox.Size = UDim2.new(1, -24, 0, 34)
+executeUrlBox.Position = UDim2.fromOffset(12, 372)
+executeUrlBox.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+executeUrlBox.TextColor3 = Color3.new(1, 1, 1)
+executeUrlBox.PlaceholderText = "GitHub RAW URL untuk script ini (opsional)"
+executeUrlBox.Text = ""
+executeUrlBox.TextSize = 11
+executeUrlBox.Font = Enum.Font.Gotham
+executeUrlBox.ClearTextOnFocus = false
+executeUrlBox.Parent = throwPage
+round(executeUrlBox, 6)
+
+local settingsNote = Instance.new("TextLabel")
+settingsNote.Name = "SettingsNote"
+settingsNote.Size = UDim2.new(1, -24, 0, 62)
+settingsNote.Position = UDim2.fromOffset(12, 414)
+settingsNote.BackgroundTransparency = 1
+settingsNote.Text = "SAVE/LOAD memakai filesystem executor. AUTO EXECUTE memerlukan URL RAW script yang dapat diakses. Rejoin tidak dapat memulihkan koneksi jika aplikasi/game ditutup paksa."
+settingsNote.TextColor3 = Color3.fromRGB(190, 190, 200)
+settingsNote.TextSize = 11
+settingsNote.Font = Enum.Font.Gotham
+settingsNote.TextWrapped = true
+settingsNote.TextXAlignment = Enum.TextXAlignment.Left
+settingsNote.TextYAlignment = Enum.TextYAlignment.Top
+settingsNote.Parent = throwPage
+
+local function executorFunction(...)
+    for _, name in ipairs({...}) do
+        local fn = getgenv and getgenv()[name] or _G[name]
+        if typeof(fn) == "function" then return fn end
+    end
+    return nil
+end
+
+local function collectSettings()
+    local zones = {}
+    for _, zone in ipairs(zoneNames) do
+        zones[zone] = zoneEnabled[zone] == true
+    end
+    return {
+        version = 1,
+        delayMs = tonumber(delayBox.Text) or 1900,
+        priorityMode = priorityMode,
+        reverseAD = reverseAD,
+        zoneEnabled = zones,
+        layoutMode = layoutMode,
+        autoRejoin = autoRejoin,
+        autoExecute = autoExecute,
+        autoExecuteUrl = executeUrlBox.Text or "",
+    }
+end
+
+local function saveSettings()
+    local write = executorFunction("writefile")
+    if not write then
+        throwStatus.Text = "STATUS: EXECUTOR FILE API UNAVAILABLE"
+        settingsNote.Text = "Delta tidak menyediakan writefile pada sesi ini. Pengaturan tidak dapat disimpan permanen."
+        return
+    end
+    local ok, err = pcall(function()
+        write(SETTINGS_FILE, HttpService:JSONEncode(collectSettings()))
+    end)
+    if ok then
+        throwStatus.Text = "STATUS: SETTINGS SAVED"
+        settingsNote.Text = "Pengaturan tersimpan ke " .. SETTINGS_FILE
+    else
+        throwStatus.Text = "STATUS: SAVE FAILED"
+        settingsNote.Text = "Gagal menyimpan: " .. tostring(err)
+    end
+end
+
+local function loadSettings()
+    local read = executorFunction("readfile")
+    local exists = executorFunction("isfile")
+    if not read then
+        throwStatus.Text = "STATUS: EXECUTOR FILE API UNAVAILABLE"
+        settingsNote.Text = "Delta tidak menyediakan readfile pada sesi ini. Pengaturan tidak dapat dimuat."
+        return
+    end
+    if exists then
+        local okExists, found = pcall(exists, SETTINGS_FILE)
+        if okExists and not found then
+            throwStatus.Text = "STATUS: NO SAVED SETTINGS"
+            return
+        end
+    end
+
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(read(SETTINGS_FILE))
+    end)
+    if not ok or type(data) ~= "table" then
+        throwStatus.Text = "STATUS: LOAD FAILED"
+        settingsNote.Text = "File pengaturan tidak ditemukan atau formatnya rusak."
+        return
+    end
+
+    local ms = tonumber(data.delayMs)
+    if ms and ms >= 100 then delayBox.Text = tostring(math.floor(ms)) end
+
+    if data.priorityMode == "NEAREST" or data.priorityMode == "RARE" then
+        priorityMode = data.priorityMode
+        modeControl.Text = priorityMode
+    end
+
+    if type(data.reverseAD) == "boolean" then
+        reverseAD = data.reverseAD
+        adControl.Text = reverseAD and "REVERSED" or "NORMAL"
+    end
+
+    if type(data.zoneEnabled) == "table" then
+        for _, zone in ipairs(zoneNames) do
+            if type(data.zoneEnabled[zone]) == "boolean" then
+                zoneEnabled[zone] = data.zoneEnabled[zone]
+                updateZoneButton(zone)
+            end
+        end
+        itemCache = scanItems()
+        target = nil
+        releaseAll()
+    end
+
+    if data.layoutMode == "AUTO" or data.layoutMode == "COMPACT" or data.layoutMode == "LARGE" then
+        layoutMode = data.layoutMode
+        layoutButton.Text = layoutMode
+        applyLayoutMode()
+    end
+
+    autoRejoin = data.autoRejoin == true
+    autoExecute = data.autoExecute == true
+    autoExecuteUrl = type(data.autoExecuteUrl) == "string" and data.autoExecuteUrl or ""
+    executeUrlBox.Text = autoExecuteUrl
+    rejoinButton.Text = "AUTO REJOIN: " .. (autoRejoin and "ON" or "OFF")
+    executeButton.Text = "AUTO EXECUTE: " .. (autoExecute and "ON" or "OFF")
+    rejoinButton.BackgroundColor3 = autoRejoin and Color3.fromRGB(30, 145, 75) or Color3.fromRGB(75, 75, 85)
+    executeButton.BackgroundColor3 = autoExecute and Color3.fromRGB(30, 145, 75) or Color3.fromRGB(75, 75, 85)
+
+    throwStatus.Text = "STATUS: SETTINGS LOADED"
+    settingsNote.Text = "Pengaturan berhasil dimuat. Tekan SAVE SETTINGS setelah mengubah pilihan."
+    refresh()
+end
+
+saveSettingsButton.MouseButton1Click:Connect(saveSettings)
+loadSettingsButton.MouseButton1Click:Connect(loadSettings)
+
+rejoinButton.MouseButton1Click:Connect(function()
+    autoRejoin = not autoRejoin
+    rejoinButton.Text = "AUTO REJOIN: " .. (autoRejoin and "ON" or "OFF")
+    rejoinButton.BackgroundColor3 = autoRejoin and Color3.fromRGB(30, 145, 75) or Color3.fromRGB(75, 75, 85)
+    settingsNote.Text = autoRejoin
+        and "Auto Rejoin aktif untuk kegagalan teleport yang terdeteksi. Putus koneksi total mungkin tetap memerlukan reconnect manual."
+        or "Auto Rejoin nonaktif."
+end)
+
+executeButton.MouseButton1Click:Connect(function()
+    autoExecute = not autoExecute
+    autoExecuteUrl = executeUrlBox.Text or ""
+    executeButton.Text = "AUTO EXECUTE: " .. (autoExecute and "ON" or "OFF")
+    executeButton.BackgroundColor3 = autoExecute and Color3.fromRGB(30, 145, 75) or Color3.fromRGB(75, 75, 85)
+    if autoExecute and autoExecuteUrl == "" then
+        settingsNote.Text = "Masukkan URL GitHub RAW script ini terlebih dahulu. Tanpa URL, script tidak dapat dijalankan ulang setelah teleport."
+    else
+        settingsNote.Text = autoExecute
+            and "Auto Execute aktif; script akan diantrekan saat teleport jika API executor tersedia."
+            or "Auto Execute nonaktif."
+    end
+end)
+
+local function queueAutoExecute()
+    if not autoExecute or autoExecuteUrl == "" then return end
+    local queue = executorFunction("queue_on_teleport", "queueonteleport", "queueonteleport")
+    if not queue then
+        settingsNote.Text = "API queue_on_teleport tidak tersedia pada executor ini."
+        return
+    end
+    local escapedUrl = string.format("%q", autoExecuteUrl)
+    local payload = "loadstring(game:HttpGet(" .. escapedUrl .. "))()"
+    pcall(queue, payload)
+end
+
+-- Queue the script for successful teleports. This does not guarantee recovery
+-- from a hard disconnect or a closed Roblox app.
+pcall(function()
+    player.OnTeleport:Connect(function(state)
+        if state == Enum.TeleportState.Started then
+            queueAutoExecute()
+        end
+    end)
+end)
+
+local rejoinBusy = false
+pcall(function()
+    TeleportService.TeleportInitFailed:Connect(function(failedPlayer, result, message)
+        if failedPlayer ~= player or not autoRejoin or rejoinBusy or throwState.Closed then return end
+        rejoinBusy = true
+        settingsNote.Text = "Teleport gagal; mencoba bergabung kembali..."
+        task.delay(4, function()
+            if not autoRejoin or throwState.Closed then rejoinBusy = false; return end
+            pcall(function()
+                TeleportService:Teleport(game.PlaceId, player)
+            end)
+            task.delay(8, function() rejoinBusy = false end)
+        end)
+    end)
+end)
+
 local function pressE()
     if throwState.Closed then return end
     pcall(function() VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game) end)
@@ -920,7 +1164,7 @@ throwStart.MouseButton1Click:Connect(function()
             end
             return
         end
-        throwStatus.Text = "STATUS: THROW ZONE >> SCAN ITEM >> THROW >> COLLECT MAX 8"
+        throwStatus.Text = "STATUS: THROW ZONE >> SCAN ITEM >> THROW >> COLLECT"
         throwStatus.TextColor3 = Color3.fromRGB(80,255,130)
         while throwState.Running and not throwState.Closed and throwState.Token == token do
             pressE()
