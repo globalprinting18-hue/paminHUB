@@ -77,7 +77,7 @@ local zoneEnabled = {
 
 local zoneNames = {"Kitchen", "Neighborhood", "Market", "City", "Pak GM Studio"}
 
-local priorityMode = "RARE"
+local priorityMode = "NEAREST"
 
 local priorities = {
     GoldenWok=100, StoneMortar=95, Fridge=90, RantangTower=85,
@@ -98,7 +98,11 @@ local known = {
     "VendorUmbrella", "FoodCart", "GiantDurian", "GiantPineapple", "MegaBaksoBowl",
     "TrafficCone", "FireHydrant", "TrashBin", "StreetLamp", "BusStopSign",
     "VendingMachine", "YellowTaxi", "NeonSign", "TrafficLight", "MegaRingLight",
-    "GameController", "Headphones",
+
+    -- Pak GM Studio (Zona 5)
+    -- Penamaan mengikuti pola internal Zona 1: tanpa spasi, PascalCase.
+    "EnergyDrink", "GameController", "Headphones", "Microphone", "Webcam",
+    "RGBKeyboard", "GamingChair", "ArcadeCabinet", "StreamingPC", "GoldenGamerCrown",
 }
 
 -- Approximate Z bands inferred from the supplied scan; adjust after live testing.
@@ -472,7 +476,7 @@ local function label(txt, y, h, color, size)
     return l
 end
 
-label("PAPAMAMIN AUTO COLLECT v2.2 | FINAL ZONE", 9, 24, Color3.fromRGB(255,193,91), 15)
+label("PAMIN HUB", 9, 24, Color3.fromRGB(255,193,91), 15)
 status = label("STATUS: OFF", 34, 22, Color3.fromRGB(230,230,230), 11)
 local info = label("PAN: N/A | TARGET: N/A", 56, 42, Color3.fromRGB(255,193,91), 9)
 
@@ -709,18 +713,36 @@ off.Name = "AutoOffCompat"
 off.Visible = false
 off.Parent = collectPage
 
+-- MODE button: toggles both the visible name and the target-selection behavior.
+-- NEAREST = choose the closest suitable target.
+-- RARE    = keep the same targeting logic, but give rare/high-priority items a score bonus.
 modeControl.MouseButton1Click:Connect(function()
-    priorityMode = priorityMode == "RARE" and "NEAREST" or "RARE"
+    if priorityMode == "NEAREST" then
+        priorityMode = "RARE"
+    else
+        priorityMode = "NEAREST"
+    end
+
     modeControl.Text = priorityMode
-    log("Priority: " .. priorityMode)
+    log("MODE changed to: " .. priorityMode)
     refresh()
 end)
 
+-- A/D button: toggles both the visible name and the actual steering direction.
+-- NORMAL   = A steers left / D steers right.
+-- REVERSED = D steers left / A steers right.
 adControl.MouseButton1Click:Connect(function()
     reverseAD = not reverseAD
-    adControl.Text = reverseAD and "REVERSED" or "NORMAL"
+
+    if reverseAD then
+        adControl.Text = "REVERSED"
+    else
+        adControl.Text = "NORMAL"
+    end
+
+    -- Release the old direction immediately so no previous key remains held.
     releaseAll()
-    log("Reverse A/D = " .. tostring(reverseAD))
+    log("A/D mode changed to: " .. (reverseAD and "REVERSED" or "NORMAL"))
     refresh()
 end)
 
@@ -775,7 +797,7 @@ local throwInfo = Instance.new("TextLabel")
 throwInfo.Size = UDim2.new(1, -24, 0, 55)
 throwInfo.Position = UDim2.fromOffset(12, 140)
 throwInfo.BackgroundTransparency = 1
-throwInfo.Text = "Saat START: menuju ThrowZone dahulu (jika belum di dalam), lalu tekan E dua kali dengan delay dan jeda round 5 detik."
+throwInfo.Text = "Untuk uji coba, jangan disebar oke !!"
 throwInfo.TextColor3 = Color3.fromRGB(190,190,200)
 throwInfo.TextSize = 12
 throwInfo.Font = Enum.Font.Gotham
