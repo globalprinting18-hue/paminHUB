@@ -475,7 +475,7 @@ delayLabel.Parent = throwPage
 local delayBox = Instance.new("TextBox")
 delayBox.Size = UDim2.fromOffset(150, 34)
 delayBox.Position = UDim2.fromOffset(205, 95)
-delayBox.Text = "650"
+delayBox.Text = "1900"
 delayBox.PlaceholderText = "Delay (ms)"
 delayBox.BackgroundColor3 = Color3.fromRGB(45,45,55)
 delayBox.TextColor3 = Color3.new(1,1,1)
@@ -610,7 +610,7 @@ end
 throwStart.MouseButton1Click:Connect(function()
     if throwState.Running or throwState.Closed then return end
     local ms = tonumber(delayBox.Text)
-    if not ms or ms < 100 then ms = 650; delayBox.Text = "650" end
+    if not ms or ms < 100 then ms = 1900; delayBox.Text = "1900" end
     throwState.Delay = ms / 1000
     throwState.Running = true
     throwState.Token = throwState.Token + 1
