@@ -12,14 +12,6 @@ local Workspace = game:GetService("Workspace")
 
 local VIM = game:GetService("VirtualInputManager")
 
--- COBA ATUR ORIENTASI HORIZONTAL
-local StarterGui = game:GetService("StarterGui")
-
-pcall(function()
-    StarterGui.ScreenOrientation =
-        Enum.ScreenOrientation.LandscapeSensor
-end)
-
 local player = Players.LocalPlayer
 
 local pg = player:WaitForChild("PlayerGui")
@@ -46,7 +38,7 @@ local target, previousPan, previousPos, previousTime = nil, nil, nil, nil
 local flightActive, collectedEstimate = false, 0
 local flightCapped = false
 
-local maxCollect = 15
+local maxCollect = 8
 
 local held = {}
 
@@ -484,7 +476,7 @@ local function label(txt, y, h, color, size)
     return l
 end
 
-label("PAMIN HUB", 9, 24, Color3.fromRGB(255,193,91), 15)
+label("PAPAMAMIN AUTO COLLECT v2.2 | FINAL ZONE", 9, 24, Color3.fromRGB(255,193,91), 15)
 status = label("STATUS: OFF", 34, 22, Color3.fromRGB(230,230,230), 11)
 local info = label("PAN: N/A | TARGET: N/A", 56, 42, Color3.fromRGB(255,193,91), 9)
 
@@ -711,6 +703,30 @@ copy.Text = "COPY LOG"
 copy.Parent = collectPage
 round(copy, 6)
 
+local saveSettingsButton = Instance.new("TextButton")
+saveSettingsButton.Name = "SaveSettings"
+saveSettingsButton.Size = UDim2.fromOffset(150, 28)
+saveSettingsButton.Position = UDim2.new(0, 12, 0, 560)
+saveSettingsButton.BackgroundColor3 = Color3.fromRGB(35, 145, 75)
+saveSettingsButton.TextColor3 = Color3.new(1, 1, 1)
+saveSettingsButton.Font = Enum.Font.GothamBold
+saveSettingsButton.TextSize = 11
+saveSettingsButton.Text = "SAVE SETTINGS"
+saveSettingsButton.Parent = collectPage
+round(saveSettingsButton, 6)
+
+local loadSettingsButton = Instance.new("TextButton")
+loadSettingsButton.Name = "LoadSettings"
+loadSettingsButton.Size = UDim2.fromOffset(150, 28)
+loadSettingsButton.Position = UDim2.new(0, 172, 0, 560)
+loadSettingsButton.BackgroundColor3 = Color3.fromRGB(55, 100, 175)
+loadSettingsButton.TextColor3 = Color3.new(1, 1, 1)
+loadSettingsButton.Font = Enum.Font.GothamBold
+loadSettingsButton.TextSize = 11
+loadSettingsButton.Text = "LOAD SETTINGS"
+loadSettingsButton.Parent = collectPage
+round(loadSettingsButton, 6)
+
 -- Compatibility controls for scripts that may still look for the old button names.
 on = Instance.new("TextButton")
 on.Name = "AutoOnCompat"
@@ -781,7 +797,7 @@ local delayLabel = Instance.new("TextLabel")
 delayLabel.Size = UDim2.fromOffset(180, 32)
 delayLabel.Position = UDim2.fromOffset(12, 96)
 delayLabel.BackgroundTransparency = 1
-delayLabel.Text = "ubah nilai menjadi 650 >>"
+delayLabel.Text = "Delay antar tekan (ms)"
 delayLabel.TextColor3 = Color3.new(1,1,1)
 delayLabel.TextSize = 13
 delayLabel.Font = Enum.Font.Gotham
@@ -805,7 +821,7 @@ local throwInfo = Instance.new("TextLabel")
 throwInfo.Size = UDim2.new(1, -24, 0, 55)
 throwInfo.Position = UDim2.fromOffset(12, 140)
 throwInfo.BackgroundTransparency = 1
-throwInfo.Text = "Untuk uji coba, jangan disebar oke !!"
+throwInfo.Text = "Saat START: menuju ThrowZone dahulu (jika belum di dalam), lalu tekan E dua kali dengan delay dan jeda round 5 detik."
 throwInfo.TextColor3 = Color3.fromRGB(190,190,200)
 throwInfo.TextSize = 12
 throwInfo.Font = Enum.Font.Gotham
@@ -835,250 +851,6 @@ throwStop.Parent = throwPage
 round(throwStop, 7)
 
 local throwState = { Running = false, Closed = false, Delay = 1.9, RoundDelay = 5, Token = 0 }
-
--- SETTINGS / REJOIN / AUTO EXECUTE (Delta-compatible when the executor exposes these APIs)
-local HttpService = game:GetService("HttpService")
-local TeleportService = game:GetService("TeleportService")
-local SETTINGS_FILE = "PaminHub_Settings.json"
-local autoRejoin = false
-local autoExecute = false
-local autoExecuteUrl = ""
-
-local function makeActionButton(name, text, x, y, width, color)
-    local b = Instance.new("TextButton")
-    b.Name = name
-    b.Size = UDim2.fromOffset(width, 38)
-    b.Position = UDim2.fromOffset(x, y)
-    b.BackgroundColor3 = color
-    b.Text = text
-    b.TextColor3 = Color3.new(1, 1, 1)
-    b.TextSize = 12
-    b.Font = Enum.Font.GothamBold
-    b.Parent = throwPage
-    round(b, 7)
-    return b
-end
-
-local saveSettingsButton = makeActionButton(
-    "SaveSettings", "SAVE SETTINGS", 12, 280, 205, Color3.fromRGB(35, 125, 75)
-)
-local loadSettingsButton = makeActionButton(
-    "LoadSettings", "LOAD SETTINGS", 243, 280, 205, Color3.fromRGB(55, 95, 155)
-)
-local rejoinButton = makeActionButton(
-    "AutoRejoin", "AUTO REJOIN: OFF", 12, 326, 205, Color3.fromRGB(75, 75, 85)
-)
-local executeButton = makeActionButton(
-    "AutoExecute", "AUTO EXECUTE: OFF", 243, 326, 205, Color3.fromRGB(75, 75, 85)
-)
-
-local executeUrlBox = Instance.new("TextBox")
-executeUrlBox.Name = "AutoExecuteURL"
-executeUrlBox.Size = UDim2.new(1, -24, 0, 34)
-executeUrlBox.Position = UDim2.fromOffset(12, 372)
-executeUrlBox.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
-executeUrlBox.TextColor3 = Color3.new(1, 1, 1)
-executeUrlBox.PlaceholderText = "GitHub RAW URL untuk script ini (opsional)"
-executeUrlBox.Text = ""
-executeUrlBox.TextSize = 11
-executeUrlBox.Font = Enum.Font.Gotham
-executeUrlBox.ClearTextOnFocus = false
-executeUrlBox.Parent = throwPage
-round(executeUrlBox, 6)
-
-local settingsNote = Instance.new("TextLabel")
-settingsNote.Name = "SettingsNote"
-settingsNote.Size = UDim2.new(1, -24, 0, 62)
-settingsNote.Position = UDim2.fromOffset(12, 414)
-settingsNote.BackgroundTransparency = 1
-settingsNote.Text = "SAVE/LOAD memakai filesystem executor. AUTO EXECUTE memerlukan URL RAW script yang dapat diakses. Rejoin tidak dapat memulihkan koneksi jika aplikasi/game ditutup paksa."
-settingsNote.TextColor3 = Color3.fromRGB(190, 190, 200)
-settingsNote.TextSize = 11
-settingsNote.Font = Enum.Font.Gotham
-settingsNote.TextWrapped = true
-settingsNote.TextXAlignment = Enum.TextXAlignment.Left
-settingsNote.TextYAlignment = Enum.TextYAlignment.Top
-settingsNote.Parent = throwPage
-
-local function executorFunction(...)
-    for _, name in ipairs({...}) do
-        local fn = getgenv and getgenv()[name] or _G[name]
-        if typeof(fn) == "function" then return fn end
-    end
-    return nil
-end
-
-local function collectSettings()
-    local zones = {}
-    for _, zone in ipairs(zoneNames) do
-        zones[zone] = zoneEnabled[zone] == true
-    end
-    return {
-        version = 1,
-        delayMs = tonumber(delayBox.Text) or 1900,
-        priorityMode = priorityMode,
-        reverseAD = reverseAD,
-        zoneEnabled = zones,
-        layoutMode = layoutMode,
-        autoRejoin = autoRejoin,
-        autoExecute = autoExecute,
-        autoExecuteUrl = executeUrlBox.Text or "",
-    }
-end
-
-local function saveSettings()
-    local write = executorFunction("writefile")
-    if not write then
-        throwStatus.Text = "STATUS: EXECUTOR FILE API UNAVAILABLE"
-        settingsNote.Text = "Delta tidak menyediakan writefile pada sesi ini. Pengaturan tidak dapat disimpan permanen."
-        return
-    end
-    local ok, err = pcall(function()
-        write(SETTINGS_FILE, HttpService:JSONEncode(collectSettings()))
-    end)
-    if ok then
-        throwStatus.Text = "STATUS: SETTINGS SAVED"
-        settingsNote.Text = "Pengaturan tersimpan ke " .. SETTINGS_FILE
-    else
-        throwStatus.Text = "STATUS: SAVE FAILED"
-        settingsNote.Text = "Gagal menyimpan: " .. tostring(err)
-    end
-end
-
-local function loadSettings()
-    local read = executorFunction("readfile")
-    local exists = executorFunction("isfile")
-    if not read then
-        throwStatus.Text = "STATUS: EXECUTOR FILE API UNAVAILABLE"
-        settingsNote.Text = "Delta tidak menyediakan readfile pada sesi ini. Pengaturan tidak dapat dimuat."
-        return
-    end
-    if exists then
-        local okExists, found = pcall(exists, SETTINGS_FILE)
-        if okExists and not found then
-            throwStatus.Text = "STATUS: NO SAVED SETTINGS"
-            return
-        end
-    end
-
-    local ok, data = pcall(function()
-        return HttpService:JSONDecode(read(SETTINGS_FILE))
-    end)
-    if not ok or type(data) ~= "table" then
-        throwStatus.Text = "STATUS: LOAD FAILED"
-        settingsNote.Text = "File pengaturan tidak ditemukan atau formatnya rusak."
-        return
-    end
-
-    local ms = tonumber(data.delayMs)
-    if ms and ms >= 100 then delayBox.Text = tostring(math.floor(ms)) end
-
-    if data.priorityMode == "NEAREST" or data.priorityMode == "RARE" then
-        priorityMode = data.priorityMode
-        modeControl.Text = priorityMode
-    end
-
-    if type(data.reverseAD) == "boolean" then
-        reverseAD = data.reverseAD
-        adControl.Text = reverseAD and "REVERSED" or "NORMAL"
-    end
-
-    if type(data.zoneEnabled) == "table" then
-        for _, zone in ipairs(zoneNames) do
-            if type(data.zoneEnabled[zone]) == "boolean" then
-                zoneEnabled[zone] = data.zoneEnabled[zone]
-                updateZoneButton(zone)
-            end
-        end
-        itemCache = scanItems()
-        target = nil
-        releaseAll()
-    end
-
-    if data.layoutMode == "AUTO" or data.layoutMode == "COMPACT" or data.layoutMode == "LARGE" then
-        layoutMode = data.layoutMode
-        layoutButton.Text = layoutMode
-        applyLayoutMode()
-    end
-
-    autoRejoin = data.autoRejoin == true
-    autoExecute = data.autoExecute == true
-    autoExecuteUrl = type(data.autoExecuteUrl) == "string" and data.autoExecuteUrl or ""
-    executeUrlBox.Text = autoExecuteUrl
-    rejoinButton.Text = "AUTO REJOIN: " .. (autoRejoin and "ON" or "OFF")
-    executeButton.Text = "AUTO EXECUTE: " .. (autoExecute and "ON" or "OFF")
-    rejoinButton.BackgroundColor3 = autoRejoin and Color3.fromRGB(30, 145, 75) or Color3.fromRGB(75, 75, 85)
-    executeButton.BackgroundColor3 = autoExecute and Color3.fromRGB(30, 145, 75) or Color3.fromRGB(75, 75, 85)
-
-    throwStatus.Text = "STATUS: SETTINGS LOADED"
-    settingsNote.Text = "Pengaturan berhasil dimuat. Tekan SAVE SETTINGS setelah mengubah pilihan."
-    refresh()
-end
-
-saveSettingsButton.MouseButton1Click:Connect(saveSettings)
-loadSettingsButton.MouseButton1Click:Connect(loadSettings)
-
-rejoinButton.MouseButton1Click:Connect(function()
-    autoRejoin = not autoRejoin
-    rejoinButton.Text = "AUTO REJOIN: " .. (autoRejoin and "ON" or "OFF")
-    rejoinButton.BackgroundColor3 = autoRejoin and Color3.fromRGB(30, 145, 75) or Color3.fromRGB(75, 75, 85)
-    settingsNote.Text = autoRejoin
-        and "Auto Rejoin aktif untuk kegagalan teleport yang terdeteksi. Putus koneksi total mungkin tetap memerlukan reconnect manual."
-        or "Auto Rejoin nonaktif."
-end)
-
-executeButton.MouseButton1Click:Connect(function()
-    autoExecute = not autoExecute
-    autoExecuteUrl = executeUrlBox.Text or ""
-    executeButton.Text = "AUTO EXECUTE: " .. (autoExecute and "ON" or "OFF")
-    executeButton.BackgroundColor3 = autoExecute and Color3.fromRGB(30, 145, 75) or Color3.fromRGB(75, 75, 85)
-    if autoExecute and autoExecuteUrl == "" then
-        settingsNote.Text = "Masukkan URL GitHub RAW script ini terlebih dahulu. Tanpa URL, script tidak dapat dijalankan ulang setelah teleport."
-    else
-        settingsNote.Text = autoExecute
-            and "Auto Execute aktif; script akan diantrekan saat teleport jika API executor tersedia."
-            or "Auto Execute nonaktif."
-    end
-end)
-
-local function queueAutoExecute()
-    if not autoExecute or autoExecuteUrl == "" then return end
-    local queue = executorFunction("queue_on_teleport", "queueonteleport", "queueonteleport")
-    if not queue then
-        settingsNote.Text = "API queue_on_teleport tidak tersedia pada executor ini."
-        return
-    end
-    local escapedUrl = string.format("%q", autoExecuteUrl)
-    local payload = "loadstring(game:HttpGet(" .. escapedUrl .. "))()"
-    pcall(queue, payload)
-end
-
--- Queue the script for successful teleports. This does not guarantee recovery
--- from a hard disconnect or a closed Roblox app.
-pcall(function()
-    player.OnTeleport:Connect(function(state)
-        if state == Enum.TeleportState.Started then
-            queueAutoExecute()
-        end
-    end)
-end)
-
-local rejoinBusy = false
-pcall(function()
-    TeleportService.TeleportInitFailed:Connect(function(failedPlayer, result, message)
-        if failedPlayer ~= player or not autoRejoin or rejoinBusy or throwState.Closed then return end
-        rejoinBusy = true
-        settingsNote.Text = "Teleport gagal; mencoba bergabung kembali..."
-        task.delay(4, function()
-            if not autoRejoin or throwState.Closed then rejoinBusy = false; return end
-            pcall(function()
-                TeleportService:Teleport(game.PlaceId, player)
-            end)
-            task.delay(8, function() rejoinBusy = false end)
-        end)
-    end)
-end)
-
 local function pressE()
     if throwState.Closed then return end
     pcall(function() VIM:SendKeyEvent(true, Enum.KeyCode.E, false, game) end)
@@ -1154,7 +926,7 @@ local function moveToThrowZone(token)
     return false
 end
 
-throwStart.MouseButton1Click:Connect(function()
+local function startThrow()
     if throwState.Running or throwState.Closed then return end
     local ms = tonumber(delayBox.Text)
     if not ms or ms < 100 then ms = 1900; delayBox.Text = "1900" end
@@ -1172,7 +944,7 @@ throwStart.MouseButton1Click:Connect(function()
             end
             return
         end
-        throwStatus.Text = "STATUS: THROW ZONE >> SCAN ITEM >> THROW >> COLLECT"
+        throwStatus.Text = "STATUS: RUNNING"
         throwStatus.TextColor3 = Color3.fromRGB(80,255,130)
         while throwState.Running and not throwState.Closed and throwState.Token == token do
             pressE()
@@ -1181,7 +953,8 @@ throwStart.MouseButton1Click:Connect(function()
             if not waitThrow(throwState.RoundDelay, token) then break end
         end
     end)
-end)
+end
+throwStart.MouseButton1Click:Connect(startThrow)
 throwStop.MouseButton1Click:Connect(stopThrow)
 
 refresh = function()
@@ -1324,6 +1097,144 @@ _G.PAPAMAMIN_UNIFIED_CLOSE = function()
     _G.PAPAMAMIN_UNIFIED_CLOSE = nil
 end
 
+-- Persistent user preferences. File APIs (readfile/writefile/isfile) are executor-specific;
+-- normal Roblox LocalScripts should use DataStoreService on the server instead.
+local SETTINGS_FILE = "PaminHub_settings.json"
+local HttpService = game:GetService("HttpService")
+
+local function getSettingsSnapshot()
+    local zones = {}
+    for _, zone in ipairs(zoneNames) do
+        zones[zone] = zoneEnabled[zone] == true
+    end
+    local ms = tonumber(delayBox.Text) or 1900
+    ms = math.clamp(ms, 100, 60000)
+    return {
+        version = 1,
+        zones = zones,
+        priorityMode = priorityMode,
+        reverseAD = reverseAD,
+        layoutMode = layoutMode,
+        throwDelayMs = ms,
+        autoThrowEnabled = throwState.Running == true,
+        autoCollectEnabled = running == true,
+    }
+end
+
+local function saveSettings()
+    if typeof(writefile) ~= "function" then
+        log("SAVE FAILED: executor file API unavailable")
+        status.Text = "STATUS: SAVE API UNAVAILABLE"
+        return false
+    end
+    local ok, err = pcall(function()
+        writefile(SETTINGS_FILE, HttpService:JSONEncode(getSettingsSnapshot()))
+    end)
+    if ok then
+        log("SETTINGS SAVED")
+        status.Text = "STATUS: SETTINGS SAVED"
+        saveSettingsButton.Text = "SAVED!"
+        task.delay(1.5, function()
+            if saveSettingsButton.Parent then saveSettingsButton.Text = "SAVE SETTINGS" end
+        end)
+        return true
+    end
+    log("SAVE FAILED: " .. tostring(err))
+    status.Text = "STATUS: SAVE FAILED"
+    return false
+end
+
+local function loadSettings(silent)
+    if typeof(readfile) ~= "function" or typeof(isfile) ~= "function" then
+        if not silent then
+            log("LOAD FAILED: executor file API unavailable")
+            status.Text = "STATUS: LOAD API UNAVAILABLE"
+        end
+        return false
+    end
+    if not isfile(SETTINGS_FILE) then
+        if not silent then
+            log("NO SAVED SETTINGS; using defaults")
+            status.Text = "STATUS: NO SAVED SETTINGS"
+        end
+        return false
+    end
+
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(readfile(SETTINGS_FILE))
+    end)
+    if not ok or type(data) ~= "table" then
+        if not silent then
+            log("LOAD FAILED: invalid settings file")
+            status.Text = "STATUS: INVALID SETTINGS"
+        end
+        return false
+    end
+
+    -- Restore each zone through its switch so the UI and internal state stay synchronized.
+    if type(data.zones) == "table" then
+        for _, zone in ipairs(zoneNames) do
+            if type(data.zones[zone]) == "boolean" and zoneSwitches[zone] then
+                zoneSwitches[zone].Set(data.zones[zone], true)
+            end
+        end
+    end
+    if data.priorityMode == "NEAREST" or data.priorityMode == "RARE" then
+        priorityMode = data.priorityMode
+        modeControl.Text = priorityMode
+    end
+    if type(data.reverseAD) == "boolean" then
+        reverseAD = data.reverseAD
+        adControl.Text = reverseAD and "REVERSED" or "NORMAL"
+        releaseAll()
+    end
+    if data.layoutMode == "AUTO" or data.layoutMode == "COMPACT" or data.layoutMode == "LARGE" then
+        layoutMode = data.layoutMode
+        layoutButton.Text = layoutMode
+        applyLayoutMode()
+    end
+    if type(data.throwDelayMs) == "number" then
+        local ms = math.clamp(math.floor(data.throwDelayMs), 100, 60000)
+        delayBox.Text = tostring(ms)
+        throwState.Delay = ms / 1000
+    end
+
+    -- Restore Auto Collect to the exact state captured by Save.
+    -- Older settings without this field safely default to OFF.
+    if type(data.autoCollectEnabled) == "boolean" then
+        autoSwitch.Set(data.autoCollectEnabled, true)
+    else
+        autoSwitch.Set(false, true)
+    end
+
+    -- Restore Auto Throw to the exact state captured by Save.
+    -- Older settings without this field safely default to OFF.
+    if data.autoThrowEnabled == true then
+        startThrow()
+    else
+        stopThrow()
+    end
+
+    refresh()
+    if not silent then
+        log("SETTINGS LOADED")
+        status.Text = "STATUS: SETTINGS LOADED"
+        loadSettingsButton.Text = "LOADED!"
+        task.delay(1.5, function()
+            if loadSettingsButton.Parent then loadSettingsButton.Text = "LOAD SETTINGS" end
+        end)
+    end
+    return true
+end
+
+saveSettingsButton.MouseButton1Click:Connect(saveSettings)
+loadSettingsButton.MouseButton1Click:Connect(function() loadSettings(false) end)
+
+-- Automatically load saved preferences whenever this script starts.
+-- Auto Throw is restored to the state captured by the last Save.
+task.defer(function()
+    loadSettings(true)
+end)
 
 
 -- Main loop: updates ~10 times per second.
@@ -1564,11 +1475,7 @@ task.spawn(function()
 
                               end
 
-                              status.Text = "STATUS: AUTO ACTIVE | LOST="..collectedEstimate.."/8 normal | 12 gamepass"
-
-status.TextColor3 = Color3.fromRGB(0, 255, 0) -- Warna hijau
-status.TextSize = 18 -- Ukuran tulisan
-status.Font = Enum.Font.GothamBold -- Tulisan tebal
+                              status.Text="STATUS: AUTO ACTIVE | LOST="..collectedEstimate.."/8"
 
                               if not target then
 
