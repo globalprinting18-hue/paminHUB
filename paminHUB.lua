@@ -38,7 +38,7 @@ local target, previousPan, previousPos, previousTime = nil, nil, nil, nil
 local flightActive, collectedEstimate = false, 0
 local flightCapped = false
 
-local maxCollect = 8
+local maxCollect = 15
 
 local held = {}
 
@@ -773,7 +773,7 @@ local delayLabel = Instance.new("TextLabel")
 delayLabel.Size = UDim2.fromOffset(180, 32)
 delayLabel.Position = UDim2.fromOffset(12, 96)
 delayLabel.BackgroundTransparency = 1
-delayLabel.Text = "Delay antar tekan (ms)"
+delayLabel.Text = "ubah nilai menjadi 650 >>"
 delayLabel.TextColor3 = Color3.new(1,1,1)
 delayLabel.TextSize = 13
 delayLabel.Font = Enum.Font.Gotham
@@ -920,7 +920,7 @@ throwStart.MouseButton1Click:Connect(function()
             end
             return
         end
-        throwStatus.Text = "STATUS: RUNNING"
+        throwStatus.Text = "STATUS: THROW ZONE >> SCAN ITEM >> THROW >> COLLECT MAX 8"
         throwStatus.TextColor3 = Color3.fromRGB(80,255,130)
         while throwState.Running and not throwState.Closed and throwState.Token == token do
             pressE()
@@ -1312,7 +1312,11 @@ task.spawn(function()
 
                               end
 
-                              status.Text="STATUS: AUTO ACTIVE | LOST="..collectedEstimate.."/8"
+                              status.Text = "STATUS: AUTO ACTIVE | LOST="..collectedEstimate.."/8 normal | 12 gamepass"
+
+status.TextColor3 = Color3.fromRGB(0, 255, 0) -- Warna hijau
+status.TextSize = 18 -- Ukuran tulisan
+status.Font = Enum.Font.GothamBold -- Tulisan tebal
 
                               if not target then
 
