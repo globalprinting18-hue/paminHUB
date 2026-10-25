@@ -113,6 +113,85 @@ local known = {
     "RGBKeyboard", "GamingChair", "ArcadeCabinet", "StreamingPC", "GoldenGamerCrown",
 }
 
+
+-- Catalog berdasarkan daftar zona/rarity yang diberikan.
+local itemGroups = {
+    Kitchen = {
+        Common = {"CrackerJar", "WaterGallon", "RiceCooker"},
+        Uncommon = {"Toaster", "Thermos"},
+        Epic = {"Microwave"},
+        Legendary = {"Fridge", "RantangTower"},
+        Mythic = {"StoneMortar"},
+        Secret = {"GoldenWok"},
+    },
+    Neighborhood = {
+        Common = {"FlipFlop", "Bucket", "PottedPlant"},
+        Uncommon = {"Kite", "Bicycle"},
+        Epic = {"Mailbox"},
+        Legendary = {"SatelliteDish", "Becak"},
+        Mythic = {"WaterTower"},
+        Secret = {"FlyingSaucer"},
+    },
+    Market = {
+        Common = {"Watermelon", "Coconut", "BananaBunch"},
+        Uncommon = {"WeighingScale", "FruitCrate"},
+        Epic = {"VendorUmbrella"},
+        Legendary = {"FoodCart", "GiantPineapple"},
+        Mythic = {"GiantDurian"},
+        Secret = {"MegaBaksoBowl"},
+    },
+    City = {
+        Common = {"TrafficCone", "FireHydrant", "TrashBin"},
+        Uncommon = {"StreetLamp", "BusStopSign"},
+        Epic = {"VendingMachine"},
+        Legendary = {"YellowTaxi", "TrafficLight"},
+        Mythic = {"NeonSign"},
+        Secret = {"MegaRingLight"},
+    },
+    ["Pak GM Studio"] = {
+        Common = {"EnergyDrink", "GameController", "Headphones"},
+        Uncommon = {"Microphone", "Webcam"},
+        Epic = {"RGBKeyboard"},
+        Legendary = {"GamingChair", "ArcadeCabinet"},
+        Mythic = {"StreamingPC"},
+        Secret = {"GoldenGamerCrown"},
+    },
+}
+local rarityNames = {"Common", "Uncommon", "Epic", "Legendary", "Mythic", "Secret"}
+local itemRarity, itemZone = {}, {}
+for zone, rarityMap in pairs(itemGroups) do
+    for rarity, items in pairs(rarityMap) do
+        for _, itemName in ipairs(items) do
+            itemRarity[itemName] = rarity
+            itemZone[itemName] = zone
+        end
+    end
+end
+-- Multi-select filters: an empty selection means ALL.
+local selectedZones, selectedRarities, selectedItems = {}, {}, {}
+local function matchesSelection(selection, value)
+    return next(selection) == nil or selection[value] == true
+end
+local function selectionArray(selection, options)
+    local result = {}
+    for _, name in ipairs(options) do
+        if selection[name] then table.insert(result, name) end
+    end
+    return result
+end
+local function arraySelection(values, validOptions)
+    local result, valid = {}, {}
+    for _, name in ipairs(validOptions) do valid[name] = true end
+    if type(values) == "table" then
+        for _, name in ipairs(values) do
+            if valid[name] then result[name] = true end
+        end
+    elseif type(values) == "string" and valid[values] then
+        result[values] = true
+    end
+    return result
+end
+
 -- Approximate Z bands inferred from the supplied scan; adjust after live testing.
 local function zoneForPosition(p)
     if p.Z < 420 then return "Kitchen" end
@@ -459,6 +538,102 @@ local function makeDraggable(target, handle)
     end)
 end
 makeDraggable(miniButton, miniButton)
+
+
+-- SECRET TAP V4: detect the real game button and send repeated mouse taps.
+-- The helper never covers the game's button or invents a progress percentage.
+local secretTapActive = false
+local secretTapCount = 0
+local secretTapLast = 0
+local secretTapStarted = 0
+local secretTapMissingSince = nil
+local secretTapInterval = 0.035 -- 28 taps/s maximum; engine may rate-limit inputs
+local secretTapStatus = Instance.new("TextLabel")
+secretTapStatus.Name = "SecretTapStatusV4"
+secretTapStatus.Size = UDim2.fromOffset(310, 34)
+secretTapStatus.Position = UDim2.new(0.5, -155, 1, -190)
+secretTapStatus.BackgroundColor3 = Color3.fromRGB(20, 20, 24)
+secretTapStatus.BackgroundTransparency = 0.12
+secretTapStatus.TextColor3 = Color3.fromRGB(90, 255, 125)
+secretTapStatus.TextSize = 15
+secretTapStatus.Font = Enum.Font.GothamBold
+secretTapStatus.Text = "SECRET TAP AUTO"
+secretTapStatus.Visible = false
+secretTapStatus.ZIndex = 100
+secretTapStatus.Parent = gui
+round(secretTapStatus, 8)
+
+local function visibleInHierarchy(obj)
+    local node = obj
+    while node and node ~= pg do
+        if node:IsA("GuiObject") and not node.Visible then return false end
+        if node:IsA("ScreenGui") and not node.Enabled then return false end
+        node = node.Parent
+    end
+    return obj.AbsoluteSize.X > 10 and obj.AbsoluteSize.Y > 10
+end
+
+local function findOriginalSecretButton()
+    local best, bestScore = nil, -1
+    for _, obj in ipairs(pg:GetDescendants()) do
+        if obj:IsA("GuiButton") and not obj:IsDescendantOf(gui) and visibleInHierarchy(obj) then
+            local text = obj:IsA("TextButton") and tostring(obj.Text or "") or ""
+            local candidate = string.lower(text .. " " .. obj.Name)
+            for _, child in ipairs(obj:GetDescendants()) do
+                if child:IsA("TextLabel") then
+                    candidate = candidate .. " " .. string.lower(child.Text or "")
+                end
+            end
+            local score = 0
+            if candidate:find("tap tap tap", 1, true) then score = 100 end
+            if score == 0 and candidate:find("tap", 1, true) and candidate:find("secret", 1, true) then score = 60 end
+            if score > bestScore and score > 0 then best, bestScore = obj, score end
+        end
+    end
+    return best
+end
+
+local function updateSecretTapHelper()
+    local original = findOriginalSecretButton()
+    local now = os.clock()
+    if not original then
+        if secretTapActive then
+            if not secretTapMissingSince then secretTapMissingSince = now end
+            if now - secretTapMissingSince > 0.20 then
+                secretTapActive = false
+                secretTapStatus.Visible = false
+                log("SECRET TAP finished/disappeared; taps=" .. secretTapCount)
+            end
+        end
+        return
+    end
+    secretTapMissingSince = nil
+    if not secretTapActive then
+        secretTapActive = true
+        secretTapStarted = now
+        secretTapCount = 0
+        secretTapLast = 0
+        log("SECRET TAP detected: " .. original:GetFullName())
+    end
+    secretTapStatus.Visible = true
+    secretTapStatus.Text = "SECRET AUTO TAP | " .. secretTapCount .. " taps"
+    if now - secretTapStarted > 4.0 then
+        -- Do not keep clicking an unrelated stale UI indefinitely.
+        secretTapActive = false
+        secretTapStatus.Visible = false
+        return
+    end
+    if now - secretTapLast < secretTapInterval then return end
+    local center = original.AbsolutePosition + original.AbsoluteSize * 0.5
+    if center.X < 0 or center.Y < 0 then return end
+    secretTapLast = now
+    local ok = pcall(function()
+        VIM:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 0)
+        VIM:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 0)
+    end)
+    if ok then secretTapCount = secretTapCount + 1 end
+end
+
 minimizeButton.MouseButton1Click:Connect(function()
     frame.Visible = false
     miniButton.Visible = true
@@ -488,18 +663,18 @@ label("PAMIN HUB", 9, 24, Color3.fromRGB(255,193,91), 15)
 status = label("STATUS: OFF", 34, 22, Color3.fromRGB(230,230,230), 11)
 local info = label("PAN: N/A | TARGET: N/A", 56, 42, Color3.fromRGB(255,193,91), 9)
 
-local zoneTitle = Instance.new("TextLabel")
-zoneTitle.Size = UDim2.new(1, -20, 0, 22)
-zoneTitle.Position = UDim2.fromOffset(10, 100)
-zoneTitle.BackgroundTransparency = 1
-zoneTitle.Text = "TARGET GROUPS — ON = ACTIVE / OFF = IGNORED"
-zoneTitle.TextColor3 = Color3.fromRGB(255,193,91)
-zoneTitle.TextSize = 10
-zoneTitle.Font = Enum.Font.GothamBold
-zoneTitle.TextXAlignment = Enum.TextXAlignment.Left
-zoneTitle.Parent = collectPage
+local filterTitle = Instance.new("TextLabel")
+filterTitle.Size = UDim2.new(1, -20, 0, 22)
+filterTitle.Position = UDim2.fromOffset(10, 100)
+filterTitle.BackgroundTransparency = 1
+filterTitle.Text = "TARGET FILTERS"
+filterTitle.TextColor3 = Color3.fromRGB(255,193,91)
+filterTitle.TextSize = 10
+filterTitle.Font = Enum.Font.GothamBold
+filterTitle.TextXAlignment = Enum.TextXAlignment.Left
+filterTitle.Parent = collectPage
 
--- Small switch used by the redesigned GUI.
+-- Small switch used by the GUI.
 local function makeSwitch(name, y, initial, callback)
     local row = Instance.new("Frame")
     row.Name = name .. "_Row"
@@ -548,20 +723,11 @@ local function makeSwitch(name, y, initial, callback)
         render()
         if fire and callback then callback(state) end
     end
-    track.MouseButton1Click:Connect(function()
-        setState(not state, true)
-    end)
+    track.MouseButton1Click:Connect(function() setState(not state, true) end)
     render()
-    return {
-        Row = row,
-        Button = track,
-        Set = setState,
-        Get = function() return state end,
-    }
+    return {Row=row, Button=track, Set=setState, Get=function() return state end}
 end
 
--- AUTO COLLECT master switch. The existing AUTO ON/OFF buttons below are kept
--- as hidden compatibility controls so the original callbacks still work.
 local function setAutoCollect(enabled)
     if enabled then
         running=true
@@ -575,62 +741,30 @@ local function setAutoCollect(enabled)
         initialCamera=Workspace.CurrentCamera and Workspace.CurrentCamera.CFrame.Position
         target=nil
         lastFieldRefresh=0
-        log("AUTO ON: persistent mode; waiting for flying pan")
+        log("AUTO ON: waiting for flying pan")
     else
         stopAuto("AUTO OFF")
     end
     refresh()
 end
-
 local autoSwitch = makeSwitch("AUTO COLLECT", 126, false, function(enabled)
     setAutoCollect(enabled)
 end)
 
+-- Keep the old zone-setting compatibility table, but the dropdown now controls targeting.
 local zoneSwitches = {}
-local zoneY = {
-    Kitchen = 164,
-    Neighborhood = 202,
-    Market = 240,
-    City = 278,
-    ["Pak GM Studio"] = 316,
-}
-
-local zoneButtons = {}
 local function updateZoneButton(zone)
     local control = zoneSwitches[zone]
-    if not control then return end
-    control.Set(zoneEnabled[zone], false)
+    if control then control.Set(zoneEnabled[zone], false) end
 end
-
-for _, zone in ipairs(zoneNames) do
-    local control = makeSwitch(zone, zoneY[zone], zoneEnabled[zone], function(enabled)
-        zoneEnabled[zone] = enabled
-        itemCache = scanItems()
-        if target and not zoneEnabled[target.zone] then
-            target = nil
-            releaseAll()
-        end
-        log("GROUP " .. zone .. " = " .. (enabled and "ON" or "OFF"))
-        refresh()
-    end)
-    zoneSwitches[zone] = control
-    zoneButtons[zone] = control.Button
-end
-
--- Keep the original ALL GROUPS controls functional, but hide them from the
--- compact layout because the five switches already expose the same setting.
 local allZonesButton = Instance.new("TextButton")
 allZonesButton.Visible = false
 allZonesButton.Parent = collectPage
 local noZonesButton = Instance.new("TextButton")
 noZonesButton.Visible = false
 noZonesButton.Parent = collectPage
-
 local function setAllZones(enabled)
-    for _, zone in ipairs(zoneNames) do
-        zoneEnabled[zone] = enabled
-        updateZoneButton(zone)
-    end
+    for _, zone in ipairs(zoneNames) do zoneEnabled[zone] = enabled end
     itemCache = scanItems()
     target = nil
     releaseAll()
@@ -640,10 +774,213 @@ end
 allZonesButton.MouseButton1Click:Connect(function() setAllZones(true) end)
 noZonesButton.MouseButton1Click:Connect(function() setAllZones(false) end)
 
+local dropdowns = {}
+local itemDropdown
+local function sortedItemsForFilters()
+    local list, seen = {}, {}
+    for _, zone in ipairs(zoneNames) do
+        if matchesSelection(selectedZones, zone) then
+            for _, rarity in ipairs(rarityNames) do
+                if matchesSelection(selectedRarities, rarity) then
+                    for _, itemName in ipairs(itemGroups[zone][rarity] or {}) do
+                        if not seen[itemName] then
+                            seen[itemName] = true
+                            table.insert(list, itemName)
+                        end
+                    end
+                end
+            end
+        end
+    end
+    table.sort(list)
+    return list
+end
+
+local function createDropdown(name, y, allText, getOptions, onSelect)
+    local row = Instance.new("Frame")
+    row.Name = name .. "Row"
+    row.Size = UDim2.new(1, -20, 0, 32)
+    row.Position = UDim2.fromOffset(10, y)
+    row.BackgroundTransparency = 1
+    row.Parent = collectPage
+
+    local left = Instance.new("TextLabel")
+    left.Size = UDim2.new(0, 112, 1, 0)
+    left.BackgroundTransparency = 1
+    left.Text = name
+    left.TextColor3 = Color3.fromRGB(245,245,245)
+    left.TextSize = 12
+    left.Font = Enum.Font.GothamBold
+    left.TextXAlignment = Enum.TextXAlignment.Left
+    left.Parent = row
+
+    local button = Instance.new("TextButton")
+    button.Name = name .. "Button"
+    button.Size = UDim2.new(1, -112, 0, 28)
+    button.Position = UDim2.new(0, 112, 0, 2)
+    button.BackgroundColor3 = Color3.fromRGB(45,45,55)
+    button.BorderSizePixel = 0
+    button.TextColor3 = Color3.new(1,1,1)
+    button.TextSize = 11
+    button.Font = Enum.Font.GothamBold
+    button.TextTruncate = Enum.TextTruncate.AtEnd
+    button.Parent = row
+    round(button, 6)
+
+    local popup = Instance.new("ScrollingFrame")
+    popup.Name = name .. "Dropdown"
+    popup.Size = UDim2.new(1, -112, 0, 144)
+    popup.Position = UDim2.new(0, 112, 1, 1)
+    popup.BackgroundColor3 = Color3.fromRGB(27,27,32)
+    popup.BorderSizePixel = 0
+    popup.ScrollBarThickness = 5
+    popup.CanvasSize = UDim2.fromOffset(0,0)
+    popup.Visible = false
+    popup.ZIndex = 20
+    popup.Parent = row
+    round(popup, 6)
+    local listLayout = Instance.new("UIListLayout")
+    listLayout.Padding = UDim.new(0,2)
+    listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+    listLayout.Parent = popup
+    local pad = Instance.new("UIPadding")
+    pad.PaddingTop = UDim.new(0,4)
+    pad.PaddingBottom = UDim.new(0,4)
+    pad.PaddingLeft = UDim.new(0,4)
+    pad.PaddingRight = UDim.new(0,4)
+    pad.Parent = popup
+
+    local selected = {}
+    local function getNames()
+        local names = {}
+        for _, option in ipairs(getOptions()) do
+            if option ~= allText and selected[option] then
+                table.insert(names, option)
+            end
+        end
+        return names
+    end
+    local function renderButton()
+        local names = getNames()
+        local caption = #names == 0 and allText or table.concat(names, ", ")
+        button.Text = caption .. (popup.Visible and "  ▲" or "  ▼")
+    end
+    local function rebuildOptions()
+        for _, child in ipairs(popup:GetChildren()) do
+            if child:IsA("TextButton") then child:Destroy() end
+        end
+        local options = getOptions()
+        popup.CanvasSize = UDim2.fromOffset(0, #options * 30 + 8)
+        for index, option in ipairs(options) do
+            local active = option == allText and next(selected) == nil or selected[option] == true
+            local opt = Instance.new("TextButton")
+            opt.Name = "Option_" .. index
+            opt.Size = UDim2.new(1, -4, 0, 28)
+            opt.BackgroundColor3 = active and Color3.fromRGB(255,193,91) or Color3.fromRGB(45,45,55)
+            opt.BorderSizePixel = 0
+            opt.TextColor3 = active and Color3.fromRGB(18,18,21) or Color3.new(1,1,1)
+            opt.TextSize = 11
+            opt.Font = Enum.Font.Gotham
+            opt.Text = (active and "☑ " or "☐ ") .. option
+            opt.TextXAlignment = Enum.TextXAlignment.Left
+            opt.LayoutOrder = index
+            opt.ZIndex = 21
+            opt.Parent = popup
+            round(opt, 4)
+            opt.MouseButton1Click:Connect(function()
+                if option == allText then
+                    selected = {}
+                else
+                    selected[option] = not selected[option] or nil
+                end
+                onSelect(getNames())
+                rebuildOptions()
+                renderButton()
+            end)
+        end
+    end
+    button.MouseButton1Click:Connect(function()
+        if popup.Visible then
+            popup.Visible = false
+        else
+            for _, dd in ipairs(dropdowns) do
+                dd.Close()
+            end
+            rebuildOptions()
+            popup.Visible = true
+        end
+        renderButton()
+    end)
+    table.insert(dropdowns, {Close=function()
+        popup.Visible = false
+        renderButton()
+    end})
+    renderButton()
+    return {
+        Set = function(values)
+            selected = arraySelection(values, getOptions())
+            renderButton()
+            if popup.Visible then rebuildOptions() end
+        end,
+        Get = getNames,
+        Refresh = function()
+            local valid = {}
+            for _, option in ipairs(getOptions()) do valid[option] = true end
+            for option in pairs(selected) do
+                if not valid[option] then selected[option] = nil end
+            end
+            if popup.Visible then rebuildOptions() end
+            renderButton()
+        end,
+        Button = button,
+    }
+end
+
+local zoneDropdown = createDropdown("ZONE", 164, "All Zones", function()
+    local options = {"All Zones"}
+    for _, zone in ipairs(zoneNames) do table.insert(options, zone) end
+    return options
+end, function(values)
+    selectedZones = arraySelection(values, zoneNames)
+    selectedItems = {}
+    itemDropdown.Set({})
+    itemDropdown.Refresh()
+    itemCache = scanItems()
+    target = nil
+    releaseAll()
+    log("ZONE FILTER = " .. (#values > 0 and table.concat(values, ", ") or "All Zones"))
+    refresh()
+end)
+local rarityDropdown = createDropdown("RARITY", 202, "All Rarities", function()
+    local options = {"All Rarities"}
+    for _, rarity in ipairs(rarityNames) do table.insert(options, rarity) end
+    return options
+end, function(values)
+    selectedRarities = arraySelection(values, rarityNames)
+    selectedItems = {}
+    itemDropdown.Set({})
+    itemDropdown.Refresh()
+    target = nil
+    releaseAll()
+    log("RARITY FILTER = " .. (#values > 0 and table.concat(values, ", ") or "All Rarities"))
+    refresh()
+end)
+itemDropdown = createDropdown("TARGETING", 240, "All Items", function()
+    local options = {"All Items"}
+    for _, itemName in ipairs(sortedItemsForFilters()) do table.insert(options, itemName) end
+    return options
+end, function(values)
+    selectedItems = arraySelection(values, sortedItemsForFilters())
+    target = nil
+    releaseAll()
+    log("ITEM FILTER = " .. (#values > 0 and table.concat(values, ", ") or "All Items"))
+    refresh()
+end)
+
 local modeControl = Instance.new("TextButton")
 modeControl.Name = "ModeButton"
 modeControl.Size = UDim2.fromOffset(92, 28)
-modeControl.Position = UDim2.new(1, -102, 0, 354)
+modeControl.Position = UDim2.new(1, -102, 0, 278)
 modeControl.BackgroundColor3 = Color3.fromRGB(255,193,91)
 modeControl.TextColor3 = Color3.fromRGB(18,18,21)
 modeControl.Text = "NEAREST"
@@ -652,13 +989,13 @@ modeControl.Font = Enum.Font.GothamBold
 modeControl.Parent = collectPage
 round(modeControl, 6)
 
-local modeLabel = label("MODE", 350, 30, Color3.fromRGB(245,245,245), 12)
+local modeLabel = label("MODE", 274, 30, Color3.fromRGB(245,245,245), 12)
 modeLabel.Size = UDim2.fromOffset(120, 30)
 
 local adControl = Instance.new("TextButton")
 adControl.Name = "ADButton"
 adControl.Size = UDim2.fromOffset(92, 28)
-adControl.Position = UDim2.new(1, -102, 0, 392)
+adControl.Position = UDim2.new(1, -102, 0, 316)
 adControl.BackgroundColor3 = Color3.fromRGB(255,193,91)
 adControl.TextColor3 = Color3.fromRGB(18,18,21)
 adControl.Text = "NORMAL"
@@ -667,14 +1004,14 @@ adControl.Font = Enum.Font.GothamBold
 adControl.Parent = collectPage
 round(adControl, 6)
 
-local adLabel = label("A/D", 388, 30, Color3.fromRGB(245,245,245), 12)
+local adLabel = label("A/D", 312, 30, Color3.fromRGB(245,245,245), 12)
 adLabel.Size = UDim2.fromOffset(120, 30)
 
 -- Log area is clipped inside its own frame so text can never spill outside GUI.
 local logFrame = Instance.new("Frame")
 logFrame.Name = "LogFrame"
 logFrame.Size = UDim2.new(1, -20, 0, 88)
-logFrame.Position = UDim2.fromOffset(10, 426)
+logFrame.Position = UDim2.fromOffset(10, 354)
 logFrame.BackgroundColor3 = Color3.fromRGB(30,30,33)
 logFrame.BorderSizePixel = 0
 logFrame.ClipsDescendants = true
@@ -702,7 +1039,7 @@ out.Parent = logFrame
 local copy = Instance.new("TextButton")
 copy.Name = "CopyLog"
 copy.Size = UDim2.fromOffset(92, 28)
-copy.Position = UDim2.new(0.5, -46, 0, 524)
+copy.Position = UDim2.new(0.5, -46, 0, 452)
 copy.BackgroundColor3 = Color3.fromRGB(255,193,91)
 copy.TextColor3 = Color3.fromRGB(18,18,18)
 copy.Font = Enum.Font.GothamBold
@@ -835,6 +1172,95 @@ throwStop.Parent = throwPage
 round(throwStop, 7)
 
 local throwState = { Running = false, Closed = false, Delay = 1.9, RoundDelay = 5, Token = 0 }
+-- V5: pause throwing while BASE is open or a placement cycle is underway.
+local placeState = { Enabled = false, Busy = false, Interval = 30, LastRun = os.clock(), Count = 0 }
+local function basePanel()
+    local hud = pg:FindFirstChild("PanThrowHUD")
+    local root = hud and hud:FindFirstChild("Frame")
+    return root and root:FindFirstChild("base")
+end
+local function baseOpen()
+    local panel = basePanel()
+    if not panel then return false end
+    local node = panel
+    while node and node ~= pg do
+        if node:IsA("GuiObject") and not node.Visible then return false end
+        if node:IsA("ScreenGui") and not node.Enabled then return false end
+        node = node.Parent
+    end
+    return true
+end
+local function throwBlocked()
+    return placeState.Busy or baseOpen() or secretTapActive
+end
+
+local placeTitle = Instance.new("TextLabel")
+placeTitle.Name = "PlaceBestTitleV5"
+placeTitle.Size = UDim2.new(1, -24, 0, 24)
+placeTitle.Position = UDim2.fromOffset(12, 476)
+placeTitle.BackgroundTransparency = 1
+placeTitle.Text = "AUTO PLACE BEST ITEM"
+placeTitle.TextColor3 = Color3.fromRGB(255, 193, 91)
+placeTitle.Font = Enum.Font.GothamBold
+placeTitle.TextSize = 14
+placeTitle.TextXAlignment = Enum.TextXAlignment.Left
+placeTitle.Parent = throwPage
+
+local placeToggle = Instance.new("TextButton")
+placeToggle.Name = "AutoPlaceBestToggleV5"
+placeToggle.Size = UDim2.fromOffset(205, 36)
+placeToggle.Position = UDim2.fromOffset(12, 504)
+placeToggle.BackgroundColor3 = Color3.fromRGB(80, 80, 90)
+placeToggle.Text = "AUTO PLACE: OFF"
+placeToggle.TextColor3 = Color3.new(1, 1, 1)
+placeToggle.Font = Enum.Font.GothamBold
+placeToggle.TextSize = 12
+placeToggle.Parent = throwPage
+round(placeToggle, 6)
+
+local placeIntervalBox = Instance.new("TextBox")
+placeIntervalBox.Name = "AutoPlaceIntervalV5"
+placeIntervalBox.Size = UDim2.fromOffset(205, 36)
+placeIntervalBox.Position = UDim2.fromOffset(243, 504)
+placeIntervalBox.BackgroundColor3 = Color3.fromRGB(45, 45, 55)
+placeIntervalBox.TextColor3 = Color3.new(1, 1, 1)
+placeIntervalBox.Font = Enum.Font.GothamBold
+placeIntervalBox.TextSize = 12
+placeIntervalBox.Text = "30"
+placeIntervalBox.PlaceholderText = "Interval (detik)"
+placeIntervalBox.ClearTextOnFocus = false
+placeIntervalBox.Parent = throwPage
+round(placeIntervalBox, 6)
+
+local placeStatus = Instance.new("TextLabel")
+placeStatus.Name = "AutoPlaceStatusV5"
+placeStatus.Size = UDim2.new(1, -24, 0, 36)
+placeStatus.Position = UDim2.fromOffset(12, 545)
+placeStatus.BackgroundTransparency = 1
+placeStatus.TextColor3 = Color3.fromRGB(185, 185, 195)
+placeStatus.Font = Enum.Font.Gotham
+placeStatus.TextSize = 11
+placeStatus.TextWrapped = true
+placeStatus.TextXAlignment = Enum.TextXAlignment.Left
+placeStatus.Text = "BASE > PLACE BEST > CLOSE | interval 30 detik"
+placeStatus.Parent = throwPage
+
+local function setPlaceEnabled(enabled)
+    placeState.Enabled = enabled == true
+    placeState.LastRun = os.clock()
+    placeToggle.Text = "AUTO PLACE: " .. (placeState.Enabled and "ON" or "OFF")
+    placeToggle.BackgroundColor3 = placeState.Enabled and Color3.fromRGB(30, 145, 75) or Color3.fromRGB(80, 80, 90)
+    placeStatus.Text = placeState.Enabled and "Menunggu interval berikutnya..." or "AUTO PLACE OFF"
+end
+placeToggle.MouseButton1Click:Connect(function() setPlaceEnabled(not placeState.Enabled) end)
+placeIntervalBox.FocusLost:Connect(function()
+    local n = tonumber(placeIntervalBox.Text)
+    if not n then n = 30 end
+    placeState.Interval = math.clamp(math.floor(n), 5, 3600)
+    placeIntervalBox.Text = tostring(placeState.Interval)
+    placeState.LastRun = os.clock()
+end)
+
 
 -- SETTINGS / REJOIN / AUTO EXECUTE (Delta-compatible when the executor exposes these APIs)
 local HttpService = game:GetService("HttpService")
@@ -919,10 +1345,15 @@ local function collectSettings()
         priorityMode = priorityMode,
         reverseAD = reverseAD,
         zoneEnabled = zones,
+        selectedZones = selectionArray(selectedZones, zoneNames),
+        selectedRarities = selectionArray(selectedRarities, rarityNames),
+        selectedItems = selectionArray(selectedItems, sortedItemsForFilters()),
         layoutMode = layoutMode,
         autoRejoin = autoRejoin,
         autoExecute = autoExecute,
         autoExecuteUrl = executeUrlBox.Text or "",
+        autoPlaceBest = placeState.Enabled,
+        autoPlaceInterval = placeState.Interval,
     }
 end
 
@@ -970,6 +1401,13 @@ local function loadSettings()
         return
     end
 
+    local placeSeconds = tonumber(data.autoPlaceInterval)
+    if placeSeconds then
+        placeState.Interval = math.clamp(math.floor(placeSeconds), 5, 3600)
+        placeIntervalBox.Text = tostring(placeState.Interval)
+    end
+    setPlaceEnabled(data.autoPlaceBest == true)
+
     local ms = tonumber(data.delayMs)
     if ms and ms >= 100 then delayBox.Text = tostring(math.floor(ms)) end
 
@@ -994,6 +1432,14 @@ local function loadSettings()
         target = nil
         releaseAll()
     end
+
+    selectedZones = arraySelection(data.selectedZones or data.selectedZone, zoneNames)
+    selectedRarities = arraySelection(data.selectedRarities or data.selectedRarity, rarityNames)
+    zoneDropdown.Set(selectionArray(selectedZones, zoneNames))
+    rarityDropdown.Set(selectionArray(selectedRarities, rarityNames))
+    selectedItems = arraySelection(data.selectedItems or data.selectedItem, sortedItemsForFilters())
+    itemDropdown.Set(selectionArray(selectedItems, sortedItemsForFilters()))
+    itemDropdown.Refresh()
 
     if data.layoutMode == "AUTO" or data.layoutMode == "COMPACT" or data.layoutMode == "LARGE" then
         layoutMode = data.layoutMode
@@ -1095,6 +1541,15 @@ local function waitThrow(seconds, token)
     local finish = os.clock() + seconds
     while os.clock() < finish do
         if throwState.Closed or not throwState.Running or throwState.Token ~= token then return false end
+        -- Preserve the remaining delay while the BASE menu/SECRET overlay blocks throwing.
+        if throwBlocked() then
+            local pauseStart = os.clock()
+            repeat
+                if throwState.Closed or not throwState.Running or throwState.Token ~= token then return false end
+                task.wait(0.05)
+            until not throwBlocked()
+            finish = finish + (os.clock() - pauseStart)
+        end
         task.wait(math.min(0.02, math.max(0, finish - os.clock())))
     end
     return true
@@ -1175,8 +1630,12 @@ throwStart.MouseButton1Click:Connect(function()
         throwStatus.Text = "STATUS: THROW ZONE >> SCAN ITEM >> THROW >> COLLECT"
         throwStatus.TextColor3 = Color3.fromRGB(80,255,130)
         while throwState.Running and not throwState.Closed and throwState.Token == token do
+            while throwBlocked() and throwState.Running and throwState.Token == token do task.wait(0.05) end
+            if not throwState.Running or throwState.Token ~= token then break end
             pressE()
             if not waitThrow(throwState.Delay, token) then break end
+            while throwBlocked() and throwState.Running and throwState.Token == token do task.wait(0.05) end
+            if not throwState.Running or throwState.Token ~= token then break end
             pressE()
             if not waitThrow(throwState.RoundDelay, token) then break end
         end
@@ -1211,7 +1670,7 @@ scanItems = function()
             local p = posOf(o)
             if p then
                 local zone = zoneForPosition(p)
-                if zoneEnabled[zone] and not seen[o] then
+                if not seen[o] then
                     seen[o] = true
                     table.insert(found, {obj=o, pos=p, kind=kind, zone=zone})
                 end
@@ -1227,7 +1686,10 @@ local function chooseTarget(panPos, speed)
 
           for _,item in ipairs(itemCache) do
 
-                    if item.obj.Parent then
+                    local zoneMatch = matchesSelection(selectedZones, item.zone)
+                    local rarityMatch = matchesSelection(selectedRarities, itemRarity[item.kind])
+                    local itemMatch = matchesSelection(selectedItems, item.kind)
+                    if item.obj.Parent and zoneMatch and rarityMatch and itemMatch then
 
                               local p=posOf(item.obj)
 
@@ -1325,6 +1787,139 @@ _G.PAPAMAMIN_UNIFIED_CLOSE = function()
 end
 
 
+
+-- V5 placement driver: click real GUI targets observed in the user's activity scan.
+-- No remote calls, no guessed item rarity logic, and no clicks on other players' UI.
+local function getBaseParts()
+    local hud = pg:FindFirstChild("PanThrowHUD")
+    local root = hud and hud:FindFirstChild("Frame")
+    local side = root and root:FindFirstChild("OptionalHUD")
+    side = side and side:FindFirstChild("SideButtons")
+    local opener = side and side:FindFirstChild("BASE")
+    local panel = root and root:FindFirstChild("base")
+    local main = panel and panel:FindFirstChild("Main")
+    local body = main and main:FindFirstChild("Body")
+    local actions = body and body:FindFirstChild("Frame")
+    return opener, panel, actions
+end
+local function guiClickable(button)
+    if not button or not button:IsA("GuiButton") or not button.Parent then return false end
+    local node = button
+    while node and node ~= pg do
+        if node:IsA("GuiObject") and not node.Visible then return false end
+        if node:IsA("ScreenGui") and not node.Enabled then return false end
+        node = node.Parent
+    end
+    return button.AbsoluteSize.X > 2 and button.AbsoluteSize.Y > 2
+end
+local function clickGameButton(button)
+    if not guiClickable(button) then return false end
+    local center = button.AbsolutePosition + button.AbsoluteSize * 0.5
+    local camera = Workspace.CurrentCamera
+    local viewport = camera and camera.ViewportSize
+    if viewport and (center.X < 0 or center.Y < 0 or center.X >= viewport.X or center.Y >= viewport.Y) then return false end
+    -- V5 GUI is hidden briefly so its own window cannot intercept mouse events.
+    local previous = gui.Enabled
+    gui.Enabled = false
+    local ok = pcall(function()
+        VIM:SendMouseButtonEvent(center.X, center.Y, 0, true, game, 0)
+        task.wait(0.06)
+        VIM:SendMouseButtonEvent(center.X, center.Y, 0, false, game, 0)
+    end)
+    gui.Enabled = previous
+    return ok
+end
+local function waitBaseState(expected, timeout)
+    local untilTime = os.clock() + timeout
+    repeat
+        if baseOpen() == expected then return true end
+        task.wait(0.08)
+    until os.clock() >= untilTime or not alive
+    return baseOpen() == expected
+end
+local function closeBaseSafely()
+    if not baseOpen() then return true end
+    local opener, panel = getBaseParts()
+    local closeButton = panel and panel:FindFirstChild("Close")
+    for attempt = 1, 3 do
+        if not alive or not baseOpen() then break end
+        if guiClickable(closeButton) then
+            clickGameButton(closeButton)
+        elseif guiClickable(opener) then
+            clickGameButton(opener)
+        else
+            break
+        end
+        if waitBaseState(false, 0.8) then break end
+    end
+    return not baseOpen()
+end
+local function performPlaceBest()
+    if placeState.Busy or secretTapActive or not alive then return end
+    placeState.Busy = true
+    local ok, err = pcall(function()
+        local opener, panel, actions = getBaseParts()
+        if not opener or not panel or not actions then error("Menu BASE belum ditemukan") end
+        if not baseOpen() then
+            placeStatus.Text = "Membuka BASE..."
+            if not clickGameButton(opener) or not waitBaseState(true, 1.2) then
+                error("BASE tidak terbuka")
+            end
+        end
+        -- The user's scan identifies the first action Button at X338 Y636 as PLACE BEST.
+        -- Identify by the observed relative order, not a fixed screen coordinate.
+        local candidates = {}
+        for _, child in ipairs(actions:GetChildren()) do
+            if child:IsA("TextButton") and child.Name == "Button" then
+                table.insert(candidates, child)
+            end
+        end
+        table.sort(candidates, function(a,b) return a.AbsolutePosition.X < b.AbsolutePosition.X end)
+        local placeButton = candidates[1]
+        if not placeButton or not guiClickable(placeButton) then
+            error("PLACE BEST tidak ditemukan / tidak terlihat")
+        end
+        placeStatus.Text = "Menekan PLACE BEST..."
+        if not clickGameButton(placeButton) then error("Gagal mengirim klik PLACE BEST") end
+        task.wait(0.30)
+        placeState.Count = placeState.Count + 1
+        log("AUTO PLACE BEST: click sent (" .. placeState.Count .. ")")
+    end)
+    -- Always attempt to close BASE, including when placement fails.
+    local closed = closeBaseSafely()
+    if not closed then
+        placeStatus.Text = "PERINGATAN: BASE belum tertutup, THROW dijeda"
+        log("AUTO PLACE: failed to close BASE; throwing remains blocked")
+    elseif not ok then
+        placeStatus.Text = "AUTO PLACE ERROR: " .. tostring(err)
+        log("AUTO PLACE ERROR: " .. tostring(err))
+    else
+        placeStatus.Text = "PLACE BEST diklik; BASE tertutup | total " .. placeState.Count
+    end
+    placeState.Busy = false
+end
+
+task.spawn(function()
+    while alive do
+        if placeState.Enabled and not placeState.Busy and not secretTapActive
+            and os.clock() - placeState.LastRun >= placeState.Interval then
+            placeState.LastRun = os.clock()
+            performPlaceBest()
+        end
+        task.wait(0.15)
+    end
+end)
+
+-- Independent fast polling, since the collector loop runs only at ~10 Hz.
+task.spawn(function()
+    while alive do
+        local ok, err = pcall(updateSecretTapHelper)
+        if not ok then
+            secretTapStatus.Text = "SECRET TAP ERROR"
+        end
+        task.wait(0.025)
+    end
+end)
 
 -- Main loop: updates ~10 times per second.
 
@@ -1531,7 +2126,7 @@ task.spawn(function()
                                         flightCapped=true
                                         target=nil
                                         releaseAll()
-                                        log("Reached 8 disappeared targets; steering paused until this throw ends")
+                                        log("Reached target limit; steering paused until this throw ends")
                                         refresh()
                                         return
                               end
@@ -1564,7 +2159,7 @@ task.spawn(function()
 
                               end
 
-                              status.Text = "STATUS: AUTO ACTIVE | LOST="..collectedEstimate.."/8 normal | 12 gamepass"
+                              status.Text = "STATUS: AUTO ACTIVE | LOST="..collectedEstimate.."/"..maxCollect
 
 status.TextColor3 = Color3.fromRGB(0, 255, 0) -- Warna hijau
 status.TextSize = 18 -- Ukuran tulisan
